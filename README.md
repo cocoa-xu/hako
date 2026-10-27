@@ -6,8 +6,9 @@ agent, local receiver, and web UI. There are no third-party Go dependencies or
 frontend build dependencies.
 
 The first working version supports local development and inspection. The web
-receiver binds only to loopback; remote deployment and web login are not
-implemented yet.
+receiver defaults to loopback and can also listen on explicitly selected LAN
+addresses. Web login and TLS termination are not implemented yet; any client
+that can reach a configured address can view the dashboard and machine data.
 
 ## Run locally
 
@@ -23,6 +24,27 @@ If Go is installed in `~/sdk/go1.27.3` and is not on `PATH`, build with
 
 Open <http://127.0.0.1:8787>. The script starts the receiver and agent, reuses the
 local device identity, and stops both when you press Control-C.
+
+To also listen on a LAN address, add one `IP:port` per line to the ignored
+`.local/listen-addresses` file. For example:
+
+```sh
+mkdir -p .local
+printf '%s\n' '192.0.2.10:8787' > .local/listen-addresses
+./scripts/run-local.sh
+```
+
+The script retains `127.0.0.1:8787` for local reporting. The receiver also accepts
+repeated `--listen` flags directly:
+
+```sh
+./bin/hako serve --data-dir .local \
+  --listen 127.0.0.1:8787 --listen 192.0.2.10:8787
+```
+
+Wildcard binds are rejected. All requested addresses must bind successfully
+before serving, and requests still require an allowed Host and same-origin
+browser access. Agent credentials remain required for submitting reports.
 
 To include collection that requires root:
 

@@ -29,7 +29,13 @@ if [ ! -f "$config" ]; then
   exit 1
 fi
 
-"$binary" serve --data-dir "$data_dir" --listen 127.0.0.1:8787 > "$data_dir/server.log" 2>&1 &
+set -- "$binary" serve --data-dir "$data_dir" --listen 127.0.0.1:8787
+if [ -f "$data_dir/listen-addresses" ]; then
+  while IFS= read -r address || [ -n "$address" ]; do
+    if [ -n "$address" ]; then set -- "$@" --listen "$address"; fi
+  done < "$data_dir/listen-addresses"
+fi
+"$@" > "$data_dir/server.log" 2>&1 &
 server_pid=$!
 cleanup() {
   kill "$server_pid" 2>/dev/null || true
@@ -58,7 +64,13 @@ while :; do
   sleep 0.1
 done
 
-printf 'Hako: http://127.0.0.1:8787\nPress Control-C to stop the receiver and agent.\n'
+printf 'Hako: http://127.0.0.1:8787\n'
+if [ -f "$data_dir/listen-addresses" ]; then
+  while IFS= read -r address || [ -n "$address" ]; do
+    if [ -n "$address" ]; then printf 'Hako: http://%s\n' "$address"; fi
+  done < "$data_dir/listen-addresses"
+fi
+printf 'Press Control-C to stop the receiver and agent.\n'
 if [ "$root_agent" = true ]; then
   sudo -k -- "$binary" agent --config "$config"
 else

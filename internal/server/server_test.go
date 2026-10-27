@@ -104,7 +104,7 @@ func TestReceiverRequiresInventoryAndCredential(t *testing.T) {
 func TestRejectsRebindingAndCrossOriginRequests(t *testing.T) {
 	s, _ := setup(t)
 	for _, test := range []struct{ host, origin string }{
-		{"attacker.example", ""}, {"127.0.0.1:8787", "https://attacker.example"}, {"127.0.0.1:8787", "http://127.0.0.1:9999"},
+		{"attacker.example", ""}, {"192.0.2.10:8787", ""}, {"127.0.0.1:8787", "https://attacker.example"}, {"127.0.0.1:8787", "http://127.0.0.1:9999"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/api/machines", nil)
 		req.Host = test.host
@@ -113,6 +113,31 @@ func TestRejectsRebindingAndCrossOriginRequests(t *testing.T) {
 		s.Handler().ServeHTTP(response, req)
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("host %s origin %s: %d", test.host, test.origin, response.Code)
+		}
+	}
+}
+
+func TestExplicitLANHostRetainsOriginChecks(t *testing.T) {
+	s, _ := setup(t)
+	handler := s.Handler("192.0.2.10")
+	for _, test := range []struct {
+		host, origin string
+		want         int
+	}{
+		{"192.0.2.10:8787", "", http.StatusOK},
+		{"192.0.2.10:8787", "http://192.0.2.10:8787", http.StatusOK},
+		{"127.0.0.1:8787", "", http.StatusOK},
+		{"localhost:8787", "http://localhost:8787", http.StatusOK},
+		{"192.0.2.11:8787", "", http.StatusForbidden},
+		{"attacker.example:8787", "", http.StatusForbidden},
+		{"192.0.2.10:8787", "http://192.0.2.11:8787", http.StatusForbidden},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "http://"+test.host+"/api/machines", nil)
+		req.Header.Set("Origin", test.origin)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		if response.Code != test.want {
+			t.Fatalf("host %s origin %s: got %d, want %d", test.host, test.origin, response.Code, test.want)
 		}
 	}
 }

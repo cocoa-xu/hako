@@ -98,7 +98,13 @@ func New(directory string) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Handler() http.Handler {
+func (s *Server) Handler(additionalHosts ...string) http.Handler {
+	allowedHosts := make(map[string]bool, len(additionalHosts))
+	for _, host := range additionalHosts {
+		if ip := net.ParseIP(host); ip != nil && !ip.IsUnspecified() {
+			allowedHosts[ip.String()] = true
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/machines", s.list)
 	mux.HandleFunc("POST /api/reports", s.receive)
@@ -115,8 +121,8 @@ func (s *Server) Handler() http.Handler {
 			host = r.Host
 		}
 		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			http.Error(w, "This preview only accepts loopback hosts.", http.StatusForbidden)
+		if host != "localhost" && (ip == nil || (!ip.IsLoopback() && !allowedHosts[ip.String()])) {
+			http.Error(w, "This host is not configured for the receiver.", http.StatusForbidden)
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" {

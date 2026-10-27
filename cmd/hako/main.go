@@ -3,16 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +20,15 @@ import (
 )
 
 var version = "0.1.0-dev"
+
+type listenAddresses []string
+
+func (addresses *listenAddresses) String() string { return strings.Join(*addresses, ", ") }
+
+func (addresses *listenAddresses) Set(value string) error {
+	*addresses = append(*addresses, value)
+	return nil
+}
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -101,34 +108,19 @@ func run(ctx context.Context, args []string) error {
 	case "serve":
 		flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 		directory := flags.String("data-dir", ".local", "receiver state directory")
-		address := flags.String("listen", "127.0.0.1:8787", "loopback listen address")
+		var addresses listenAddresses
+		flags.Var(&addresses, "listen", "HTTP listen address (repeatable; defaults to 127.0.0.1:8787)")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		host, _, err := net.SplitHostPort(*address)
-		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
-			return fmt.Errorf("this local preview must listen on a loopback IP address")
+		if len(addresses) == 0 {
+			addresses = append(addresses, "127.0.0.1:8787")
 		}
 		s, err := server.New(*directory)
 		if err != nil {
 			return err
 		}
-		listener, err := net.Listen("tcp", *address)
-		if err != nil {
-			return err
-		}
-		httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10}
-		go func() {
-			<-ctx.Done()
-			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = httpServer.Shutdown(shutdown)
-		}()
-		slog.Info("Hako is listening", "url", "http://"+listener.Addr().String())
-		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
+		return s.ListenAndServe(ctx, addresses)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
