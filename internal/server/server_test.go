@@ -131,7 +131,7 @@ func TestReportsRejectTrailingJSONAndOversizedBodies(t *testing.T) {
 
 func TestDashboardUsesEmbeddedAssets(t *testing.T) {
 	s, _ := setup(t)
-	for _, path := range []string{"/", "/app.js", "/style.css", "/icon.svg"} {
+	for _, path := range []string{"/", "/app.js", "/style.css", "/icon.svg", "/machine.svg"} {
 		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+path, nil)
 		response := httptest.NewRecorder()
 		s.Handler().ServeHTTP(response, req)

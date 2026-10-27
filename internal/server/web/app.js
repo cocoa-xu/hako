@@ -79,7 +79,8 @@ function renderList() {
     const first = node('td'), button = node('button', null, 'machine-button');
     button.type = 'button'; button.setAttribute('aria-pressed', String(s.device_id === selectedID));
     button.dataset.deviceId = s.device_id;
-    const glyph = node('span', '▱', 'machine-glyph'); glyph.setAttribute('aria-hidden', 'true');
+    const glyph = node('span', null, 'machine-glyph'); glyph.setAttribute('aria-hidden', 'true');
+    const icon = node('img'); icon.src = '/machine.svg'; icon.alt = ''; icon.width = 20; icon.height = 20; glyph.append(icon);
     const name = node('span'); name.append(node('span', system?.hostname || 'Unknown machine', 'machine-title'), node('span', `${hw?.model_name || 'Mac'} · ${primaryAddress(s)}`, 'machine-meta'));
     button.append(glyph, name);
     button.addEventListener('click', () => { selectedID = s.device_id; render(); });
@@ -174,7 +175,7 @@ function renderDetail() {
   clearFields('security-fields', [
     ['Remote Login', boolValue(s.security.remote_login)], ['FileVault', boolValue(s.security.filevault)],
     ['Automatic login', data(s.security.auto_login) === null ? stateLabel(s.security.auto_login) : (s.security.auto_login.data || 'Off')],
-    ['Activation Lock', hw?.activation_lock === 'enabled' ? 'On' : hw?.activation_lock === 'disabled' ? 'Off' : 'Unavailable'],
+    ['Activation Lock at startup', hw?.activation_lock === 'enabled' ? 'On' : hw?.activation_lock === 'disabled' ? 'Off' : 'Unavailable'],
   ]);
   renderNetwork(s);
   $('device-model').textContent = hw?.model_id || '';
@@ -186,7 +187,7 @@ function renderDetail() {
   ] : [['Hardware status', stateLabel(s.hardware)]]);
   clearFields('firmware-fields', hw ? [['Architecture', hw.architecture, true], ['System firmware', hw.firmware, true], ['OS loader', hw.os_loader, true], ['Installed memory', bytes(hw.memory_bytes)]] : []);
   clearFields('identifier-fields', hw ? [['Serial number', hw.serial_number, true], ['Hardware UUID', hw.hardware_uuid, true], ['Provisioning UDID', hw.provisioning_id, true], ['Hako device ID', s.device_id, true]] : []);
-  $('agent-info').textContent = `Agent ${s.agent.version} · ${s.agent.uid === 0 ? 'Running as root' : `User ${s.agent.uid}`} · Reported ${age(machine.received_at)}`;
+  $('agent-info').textContent = `Agent ${s.agent.version} · ${s.agent.uid === 0 ? 'Collected as root' : `Collected as user ${s.agent.uid}`} · Reported ${age(machine.received_at)}`;
 }
 function render() { renderList(); renderDetail(); }
 async function refresh() {

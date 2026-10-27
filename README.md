@@ -1,58 +1,155 @@
 # Hako
 
-Hako (箱, "box") is a personal Mac fleet management project, primarily for
-Mac mini clusters.
+Hako (箱, "box") is a small, self-hosted dashboard for a personal Mac fleet,
+primarily Mac mini clusters. The Go binary contains the collector, reporting
+agent, local receiver, and web UI. There are no third-party Go dependencies or
+frontend build dependencies.
 
-The project is currently in the planning stage.
+The first working version supports local development and inspection. The web
+receiver binds only to loopback; remote deployment and web login are not
+implemented yet.
 
-## Agreed direction
+## Run locally
 
-- Use Go as the primary implementation language.
-- Install a small agent on each Mac, running as root.
-- Have agents report machine information to a central service for a web UI.
-- Collect and report fixed hardware inventory once on each agent startup,
-  rather than periodically rescanning it.
-- Treat the reference screenshots as examples of useful fields, not a UI design.
+Use Go 1.27.3, pinned in `.go-version`:
 
-## Inventory and status
+```sh
+make build
+./scripts/run-local.sh
+```
 
-Fixed hardware inventory includes the model name, model identifier, model
-number, chip, architecture, core counts, installed memory, serial number, and
-hardware UUID. These belong in the startup report.
+If Go is installed in `~/sdk/go1.27.3` and is not on `PATH`, build with
+`make GO="$HOME/sdk/go1.27.3/bin/go" build`.
 
-Changing information is collected separately: hostname, operating system
-version and build, uptime, resource usage, storage, network interfaces, and
-login state. Collection intervals remain to be decided.
+Open <http://127.0.0.1:8787>. The script starts the receiver and agent, reuses the
+local device identity, and stops both when you press Control-C.
 
-Candidate fields also include firmware and OS loader versions, provisioning
-UDID, Activation Lock, Remote Login, automatic login, and running session apps.
-Availability and permissions must be verified on supported macOS versions.
+To include collection that requires root:
 
-Network inventory should represent multiple interfaces and, where available,
-their LLDP neighbors: switch name, model, port, management address, and chassis
-MAC address.
+```sh
+./scripts/run-local.sh --root-agent
+```
 
-The reference fields "VM disk written" and "Host footprint" need explicit
-definitions before implementation.
+Only the collector runs under `sudo`; the web receiver stays under the invoking
+user. The collector reads system state and reports it. It does not change system
+settings, install updates, or accept commands from the receiver. Passwords are
+never stored. No boot service is installed by this script.
 
-## Proposed implementation
+For a single JSON report without a receiver:
 
-These are starting points for discussion, not settled requirements:
+```sh
+./bin/hako inspect
+sudo ./bin/hako inspect
+```
 
-- Run the agent as a launchd LaunchDaemon.
-- Have agents initiate HTTPS connections to the service.
-- Give each enrolled agent an independent identity and revocable credential.
-- Use a Go server with embedded web assets and SQLite for the initial deployment.
-- Retry unsuccessful startup reports and provide a manual inventory refresh.
-- Track observation times and distinguish unavailable, unsupported, failed,
-  and stale information from valid values.
-- Start the UI with a searchable machine list and individual machine details.
-- Store user-managed labels, locations, and notes separately from reported data.
+Inspection output includes device identifiers and network addresses. Keep any
+saved reports private.
 
-## Open decisions
+## Signing
 
-- Minimum macOS version and supported CPU architectures.
-- Initial field set, dynamic collection intervals, and history retention.
-- Enrollment, web authentication, and deployment details.
-- LLDP collection strategy and whether session apps need a user-session helper.
-- UI design and the scope of any future remote management actions.
+The binary can be signed with an existing local Apple signing identity:
+
+```sh
+security find-identity -v -p codesigning
+SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' make sign
+```
+
+This performs local signing and verification without notarization or a timestamp
+request. Build before signing: rebuilding replaces the signature. Signing does
+not grant root access; the root collection mode still uses `sudo`.
+
+## What is collected
+
+| Category | Fields |
+| --- | --- |
+| Hardware | Model name, identifier and number; chip; architecture; physical and logical cores; every reported CPU core group; installed memory |
+| Device identity | Serial number, hardware UUID, provisioning UDID |
+| Platform | Firmware, OS loader, Activation Lock as reported by System Information |
+| System | Hostname, macOS version and build, Rapid Security Response suffix when present, boot time, uptime, 1/5/15-minute load averages, console user |
+| Memory | Free, active, inactive, speculative, wired and compressed pages in bytes; kernel memory pressure; swap total and usage |
+| Storage | Startup data volume path, total capacity, free bytes and available bytes |
+| Network | Every interface's name, MAC address, IP prefixes, administrative up flag and loopback flag |
+| Access | Remote Login status, FileVault status, configured automatic-login user |
+
+The original screenshots are field references, not a UI specification.
+
+Hardware is collected on agent startup and sent with the first successful
+report. Failed deliveries reuse the same observation. Subsequent reports contain
+dynamic state only. If the receiver loses its saved inventory, it requests the
+cached copy instead of triggering another hardware scan. An unsuccessful
+hardware collection is retried. Restart the agent to refresh hardware manually.
+
+Dynamic collection runs immediately, then waits 30 seconds between reports by
+default. Individual commands have timeouts. Hardware does not use that interval.
+The dashboard refreshes every five seconds and marks a machine as having no
+recent report after 90 seconds without receipt. This indicates reporting
+freshness, not proof that the Mac is powered off.
+
+Unknown, unsupported, permission-denied, and failed observations do not become
+zero or false. Each section records its observation time. A failed dynamic
+section is displayed as unavailable rather than silently reusing an old value.
+
+## Data semantics
+
+- CPU groups use system-provided names, including systems with more than two
+  groups. No fixed performance/efficiency split is assumed.
+- Load average is not CPU utilization.
+- Free pages are not presented as total available memory. The UI pairs memory
+  pressure with the underlying page counters and swap usage.
+- The storage figure describes the startup data filesystem, not physical SSD
+  capacity or a sum of APFS volumes. Available space does not include a custom
+  estimate of purgeable files.
+- Interface "Up" is the OS interface flag, not proof of internet connectivity.
+- Automatic login reflects the configured preference, not a guarantee that the
+  next login will be automatic.
+- Activation Lock is a startup observation, explicitly labeled as such in the
+  UI. It can change while the agent is running; restart to refresh it.
+
+## Receiver and credentials
+
+Run the two processes independently when useful:
+
+```sh
+./bin/hako serve --data-dir .local --listen 127.0.0.1:8787
+./bin/hako enroll --data-dir .local --server http://127.0.0.1:8787
+./bin/hako agent --config /path/printed/by/enroll.json --interval 30s
+```
+
+Enrollment creates a random device ID and independent bearer token. The device
+ID does not depend on the hostname or MAC address. Remove the corresponding
+credential file from the receiver's `agents/` directory to revoke it. The agent
+requires HTTPS except for literal loopback IP addresses and does not follow
+HTTP redirects.
+
+Runtime state is kept in the ignored `.local/` directory. Credential and machine
+files have mode 0600; state directories are created with mode 0700. Latest
+snapshots are saved atomically as one JSON file per device and survive receiver
+restarts. This first version does not retain historical samples. SQLite remains
+an option for later history and query requirements.
+
+## Validation
+
+```sh
+make test
+```
+
+Tests cover parsing, differing VM page sizes, three CPU groups, unavailable
+privileged data, inventory delivery and retries, redirects, credential
+revocation, receiver restart persistence, request limits, and browser-origin
+checks. Fixtures use synthetic hardware identifiers.
+
+The first version was also exercised on an Apple M6 Mac mini running macOS
+27.0.1: ordinary-user and root collection, repeated reports with an unchanged
+inventory timestamp, local signing verification, and real-browser desktop and
+400-pixel layout checks. Only this host has been tested with live collection.
+
+## Next decisions
+
+- LLDP reception and a user-session app collector. Both are explicitly marked
+  as not collected in the current UI.
+- Minimum macOS version and additional hardware validation, particularly Intel.
+- Remote receiver deployment, web authentication, and enrollment UX.
+- LaunchDaemon packaging, installation, upgrades, and removal.
+- Optional history, labels, locations, and notes.
+- Definitions for the reference fields "VM disk written" and "Host footprint".
+- Software update checks and any future remote management actions.
