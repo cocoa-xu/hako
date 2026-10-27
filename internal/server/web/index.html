@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Hako</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/" aria-label="Hako home"><img src="/icon.svg" width="25" height="25" alt="">hako<span class="brand-kanji" lang="ja">箱</span></a><span class="nav-current">Machines</span><span class="environment">Local workspace</span></header>
+  <main>
+    <div class="page-heading"><div><p class="eyebrow">YOUR FLEET</p><h1>Machines<span id="machine-count" class="count">0</span></h1></div><div class="fleet-status" id="fleet-status" role="status">Connecting</div></div>
+    <div id="connection-error" class="notice" role="alert" hidden></div>
+    <div class="toolbar"><label class="search"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m13 13 4 4"></path></svg><input id="search" type="search" placeholder="Find a machine" aria-label="Find a machine"></label><span id="updated" class="muted">Waiting for the first report</span></div>
+    <div class="table-scroll"><table class="machines"><thead><tr><th scope="col">Machine</th><th scope="col">Chip</th><th scope="col">Memory</th><th scope="col">Storage available</th><th scope="col">macOS</th><th scope="col">Status</th></tr></thead><tbody id="machine-rows"></tbody></table></div>
+    <div id="empty-state" class="empty" hidden><span class="empty-mark" lang="ja">箱</span><h2>A place for your Macs.</h2><p>Enrolled machines appear here after their first report.</p></div>
+    <div id="no-results" class="empty" hidden><h2>No matching machines</h2><p>Try another name, chip, or address.</p></div>
+    <article id="detail" hidden aria-label="Selected machine details">
+      <div class="detail-heading"><div><p class="eyebrow">MACHINE OVERVIEW</p><h2 id="detail-name"></h2><p class="subtitle" id="detail-subtitle"></p></div><span id="detail-status" class="status-pill"></span></div>
+      <nav class="detail-tabs" aria-label="Machine sections"><a href="#overview" class="active">Overview</a><a href="#network">Network</a><a href="#device">Device</a></nav>
+      <div id="overview" class="overview-grid">
+        <section class="panel" aria-labelledby="memory-title"><div class="section-heading"><h3 id="memory-title">Memory</h3><span id="memory-pressure" class="small-status"></span></div><div id="memory-content"></div></section>
+        <section class="panel" aria-labelledby="storage-title"><div class="section-heading"><h3 id="storage-title">Storage</h3><span class="muted">Data volume</span></div><div id="storage-content"></div></section>
+        <section class="panel"><h3>System</h3><dl id="system-fields" class="fields"></dl></section>
+        <section class="panel"><h3>Access &amp; security</h3><dl id="security-fields" class="fields"></dl></section>
+      </div>
+      <section id="network" class="wide-section"><div class="section-heading"><div><h3>Network</h3><p class="section-description">Interfaces and their addresses</p></div><label class="toggle"><input id="show-all-interfaces" type="checkbox">Show all interfaces</label></div><div id="network-content"></div></section>
+      <section id="device" class="wide-section"><div class="section-heading"><div><h3>Device</h3><p class="section-description" id="inventory-time"></p></div><span id="device-model" class="muted"></span></div><div class="device-grid"><dl id="hardware-fields" class="fields"></dl><dl id="firmware-fields" class="fields"></dl></div><details class="identifiers"><summary>Device identifiers</summary><dl id="identifier-fields" class="fields"></dl></details></section>
+      <footer class="detail-footer"><span id="agent-info"></span><span>LLDP and session apps are not collected yet.</span></footer>
+    </article>
+    <footer class="page-footer"><span>Hako <span lang="ja">箱</span></span><span>Your machines, in one place.</span></footer>
+  </main>
+</body>
+</html>

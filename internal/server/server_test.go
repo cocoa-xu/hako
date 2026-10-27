@@ -1,0 +1,145 @@
+package server
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"hako/internal/agent"
+	"hako/internal/report"
+)
+
+func setup(t *testing.T) (*Server, agent.Config) {
+	t.Helper()
+	directory := t.TempDir()
+	path, err := Enroll(directory, "http://127.0.0.1:8787")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config agent.Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, config
+}
+
+func post(t *testing.T, s *Server, config agent.Config, snapshot report.Snapshot) *httptest.ResponseRecorder {
+	t.Helper()
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8787/api/reports", bytes.NewReader(data))
+	req.Header.Set("Authorization", "Bearer "+config.Token)
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, req)
+	return response
+}
+
+func TestInventorySurvivesHeartbeatsAndReceiverRestart(t *testing.T) {
+	s, config := setup(t)
+	hardware := report.OK(report.Hardware{ModelName: "Test Mac"})
+	snapshot := report.Snapshot{SchemaVersion: report.SchemaVersion, DeviceID: config.DeviceID, ReportedAt: time.Now().UTC(), Hardware: &hardware}
+	if response := post(t, s, config, snapshot); response.Code != http.StatusNoContent {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	snapshot.Hardware = nil
+	snapshot.System = report.OK(report.System{Hostname: "renamed-mac"})
+	if response := post(t, s, config, snapshot); response.Code != http.StatusNoContent {
+		t.Fatal(response.Code)
+	}
+	restarted, err := New(s.directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	machine := restarted.machines[config.DeviceID]
+	if machine.Snapshot.Hardware.Data.ModelName != "Test Mac" || !machine.Snapshot.Hardware.ObservedAt.Equal(hardware.ObservedAt) {
+		t.Fatal("startup inventory changed")
+	}
+	if machine.Snapshot.System.Data.Hostname != "renamed-mac" {
+		t.Fatal("dynamic update was lost")
+	}
+	info, err := os.Stat(filepath.Join(s.directory, "machines", config.DeviceID+".json"))
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("snapshot must be private", err)
+	}
+}
+
+func TestReceiverRequiresInventoryAndCredential(t *testing.T) {
+	s, config := setup(t)
+	snapshot := report.Snapshot{SchemaVersion: report.SchemaVersion, DeviceID: config.DeviceID, ReportedAt: time.Now().UTC()}
+	if response := post(t, s, config, snapshot); response.Code != http.StatusConflict {
+		t.Fatal(response.Code)
+	}
+	bad := config
+	bad.Token = strings.Repeat("x", 64)
+	if response := post(t, s, bad, snapshot); response.Code != http.StatusUnauthorized {
+		t.Fatal(response.Code)
+	}
+	if len(s.machines) != 0 {
+		t.Fatal("rejected report was stored")
+	}
+	if err := os.Remove(filepath.Join(s.directory, "agents", config.DeviceID+".json")); err != nil {
+		t.Fatal(err)
+	}
+	if response := post(t, s, config, snapshot); response.Code != http.StatusUnauthorized {
+		t.Fatal("revoked credential accepted")
+	}
+}
+
+func TestRejectsRebindingAndCrossOriginRequests(t *testing.T) {
+	s, _ := setup(t)
+	for _, test := range []struct{ host, origin string }{
+		{"attacker.example", ""}, {"127.0.0.1:8787", "https://attacker.example"}, {"127.0.0.1:8787", "http://127.0.0.1:9999"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/api/machines", nil)
+		req.Host = test.host
+		req.Header.Set("Origin", test.origin)
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, req)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("host %s origin %s: %d", test.host, test.origin, response.Code)
+		}
+	}
+}
+
+func TestReportsRejectTrailingJSONAndOversizedBodies(t *testing.T) {
+	s, _ := setup(t)
+	for _, body := range []string{`{} {}`, strings.Repeat(" ", 1<<20) + `{}`} {
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8787/api/reports", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatal(response.Code)
+		}
+	}
+}
+
+func TestDashboardUsesEmbeddedAssets(t *testing.T) {
+	s, _ := setup(t)
+	for _, path := range []string{"/", "/app.js", "/style.css", "/icon.svg"} {
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787"+path, nil)
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, req)
+		if response.Code != http.StatusOK || response.Body.Len() == 0 {
+			t.Fatalf("asset %s: %d", path, response.Code)
+		}
+		if response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("missing cache policy")
+		}
+	}
+}
