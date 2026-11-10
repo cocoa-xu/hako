@@ -5,8 +5,6 @@ let machines = [];
 let selectedID = null;
 let clockOffset = 0;
 let connected = false;
-const isDemo = new URLSearchParams(window.location.search).get('demo') === '1';
-let demoFleet = null;
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -193,7 +191,7 @@ function renderList() {
   const available = machines.filter(online).length;
   $('fleet-status').replaceChildren(dot(connected && available > 0), document.createTextNode(connected ? `${available} online · ${machines.length} total` : 'Receiver unavailable'));
   const newest = machines.reduce((latest, m) => Math.max(latest, new Date(m.received_at).getTime()), 0);
-  $('updated').textContent = isDemo ? 'Sample data · updates every 2s' : newest ? `Live · Last report ${age(newest)}` : 'Waiting for the first report';
+  $('updated').textContent = newest ? `Live · Last report ${age(newest)}` : 'Waiting for the first report';
 }
 function barPiece(fraction, className) {
   const piece = node('div', null, `bar-piece ${className}`);
@@ -387,16 +385,9 @@ function receiveFleet(result) {
 }
 function disconnected() {
   connected = false;
-  $('connection-error').textContent = isDemo ? 'The demo could not load. Refresh to try again.' : 'Connection interrupted. Reconnecting automatically; showing the last received data.';
+  $('connection-error').textContent = 'Connection interrupted. Reconnecting automatically; showing the last received data.';
   $('connection-error').hidden = false;
   render();
-}
-async function refreshDemo() {
-  try {
-    demoFleet ||= (await import('./demo.js')).demoFleet;
-    receiveFleet(demoFleet());
-  } catch { disconnected(); }
-  finally { window.setTimeout(refreshDemo, 2000); }
 }
 $('search').addEventListener('input', render);
 $('show-all-interfaces').addEventListener('change', renderDetail);
@@ -426,20 +417,9 @@ detailTabs.forEach((button, index) => {
     next.focus();
   });
 });
-if (isDemo) {
-  document.title = 'Hako · Demo';
-  $('workspace-label').textContent = 'Demo workspace';
-  $('fleet-label').textContent = 'DEMO FLEET';
-  $('fleet-mode').textContent = 'Back to live';
-  $('fleet-mode').href = '/';
-}
-if (isDemo) {
-  refreshDemo();
-} else {
-  const events = new EventSource('/api/events');
-  events.addEventListener('machines', event => {
-    try { receiveFleet(JSON.parse(event.data)); } catch { disconnected(); }
-  });
-  events.addEventListener('error', disconnected);
-  window.setInterval(() => { if (machines.length) render(); }, 2000);
-}
+const events = new EventSource('/api/events');
+events.addEventListener('machines', event => {
+  try { receiveFleet(JSON.parse(event.data)); } catch { disconnected(); }
+});
+events.addEventListener('error', disconnected);
+window.setInterval(() => { if (machines.length) render(); }, 2000);
