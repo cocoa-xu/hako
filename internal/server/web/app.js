@@ -87,12 +87,9 @@ function renderList() {
     button.append(glyph, name);
     button.addEventListener('click', () => { selectedID = s.device_id; render(); });
     first.append(button);
-    const memory = node('td', hw ? bytes(hw.memory_bytes) : 'Unavailable');
-    const pressure = data(s.memory)?.pressure;
-    memory.append(node('span', pressure && pressure !== 'unknown' ? `${pressure[0].toUpperCase()}${pressure.slice(1)} pressure` : 'Pressure unavailable', 'machine-meta'));
     const status = node('span', null, 'row-status'); status.append(dot(online(machine)), document.createTextNode(online(machine) ? 'Online' : 'No recent report'));
     const statusCell = node('td'); statusCell.append(status);
-    tr.append(first, node('td', hw?.chip || 'Unavailable'), memory, node('td', storage ? bytes(storage.available_bytes) : 'Unavailable'), node('td', system?.os_version || 'Unavailable'), statusCell);
+    tr.append(first, node('td', hw?.chip || 'Unavailable'), memoryCell(s, hw), node('td', storage ? bytes(storage.available_bytes) : 'Unavailable'), node('td', system?.os_version || 'Unavailable'), statusCell);
     rows.append(tr);
     if (focusedDevice === s.device_id) button.focus({preventScroll: true});
   }
@@ -115,6 +112,41 @@ function barPiece(fraction, className) {
   piece.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`;
   return piece;
 }
+function memorySegments(memory) {
+  return [['Active', memory.active_bytes, 'active'], ['Wired', memory.wired_bytes, 'wired'], ['Compressed', memory.compressed_bytes, 'compressed']];
+}
+function memoryCell(snapshot, hardware) {
+  const cell = node('td'), memory = data(snapshot.memory), total = hardware?.memory_bytes;
+  if (!memory || !hardware) {
+    cell.append(stateLabel(!memory ? snapshot.memory : snapshot.hardware));
+    return cell;
+  }
+  const segments = memorySegments(memory);
+  if (!Number.isFinite(total) || total <= 0 || ![memory.free_bytes, ...segments.map(([, value]) => value)].every(value => Number.isFinite(value) && value >= 0)) {
+    cell.append(node('span', 'Unavailable', 'field-state'));
+    return cell;
+  }
+  const free = Math.min(total, memory.free_bytes), used = total - free;
+  const gigabytes = value => `${(value / 1e9).toFixed(1)} GB`;
+  const summary = node('div', null, 'memory-summary'), bar = node('div', null, 'bar');
+  const description = `${gigabytes(used)} used / ${gigabytes(free)} free`;
+  summary.title = `${description}. Used includes cached and inactive memory; free is the reported free pages.`;
+  if (memory.pressure && memory.pressure !== 'unknown') summary.title += ` Memory pressure: ${memory.pressure}.`;
+  bar.setAttribute('aria-hidden', 'true');
+  let remaining = used;
+  for (const [, value, color] of segments) {
+    const amount = Math.min(remaining, value);
+    bar.append(barPiece(amount / total, color));
+    remaining -= amount;
+  }
+  bar.append(barPiece(remaining / total, 'other-used'));
+  const values = node('span', null, 'memory-values');
+  values.setAttribute('aria-label', description);
+  values.append(node('span', gigabytes(used)), document.createTextNode(` / ${gigabytes(free)}`));
+  summary.append(bar, values);
+  cell.append(summary);
+  return cell;
+}
 function renderMemory(s, hw) {
   const box = $('memory-content'), m = data(s.memory); box.replaceChildren();
   $('memory-pressure').textContent = m && m.pressure !== 'unknown' ? `${m.pressure[0].toUpperCase()}${m.pressure.slice(1)} pressure` : 'Pressure unavailable';
@@ -123,7 +155,7 @@ function renderMemory(s, hw) {
   box.append(metric(bytes(hw.memory_bytes), 'Memory installed'));
   const bar = node('div', null, 'bar'), legend = node('div', null, 'legend');
   let remaining = 1;
-  for (const [label, value, color] of [['Active', m.active_bytes, 'active'], ['Wired', m.wired_bytes, 'wired'], ['Compressed', m.compressed_bytes, 'compressed']]) {
+  for (const [label, value, color] of memorySegments(m)) {
     const fraction = Math.min(remaining, value / hw.memory_bytes); remaining -= fraction;
     bar.append(barPiece(fraction, color));
     const item = node('span', null, 'legend-item'); item.append(node('span', null, `swatch ${color}`), document.createTextNode(`${label} ${bytes(value)}`)); legend.append(item);

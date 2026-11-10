@@ -132,6 +132,10 @@ section is displayed as unavailable rather than silently reusing an old value.
 - Load average is not CPU utilization.
 - Free pages are not presented as total available memory. The UI pairs memory
   pressure with the underlying page counters and swap usage.
+- The fleet table shows a memory bar and used / free values in decimal GB.
+  Free is the reported free-page count; used is installed memory minus free,
+  including cached and inactive memory. The bar also includes those other used
+  pages alongside active, wired, and compressed memory.
 - The storage figure describes the startup data filesystem, not physical SSD
   capacity or a sum of APFS volumes. Available space does not include a custom
   estimate of purgeable files.
