@@ -32,7 +32,12 @@ func TestEventStreamDeliversReportsAndReconnectSnapshot(t *testing.T) {
 	receiver := httptest.NewServer(s.Handler())
 	defer receiver.Close()
 	client := &http.Client{Timeout: 5 * time.Second}
-	response, err := client.Get(receiver.URL + "/api/events")
+	openStream := func() (*http.Response, error) {
+		req, _ := http.NewRequest(http.MethodGet, receiver.URL+"/api/events", nil)
+		req.Header.Set("Authorization", "Bearer "+s.adminKey)
+		return client.Do(req)
+	}
+	response, err := openStream()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +58,7 @@ func TestEventStreamDeliversReportsAndReconnectSnapshot(t *testing.T) {
 		t.Fatal("new report not pushed")
 	}
 	response.Body.Close()
-	response, err = client.Get(receiver.URL + "/api/events")
+	response, err = openStream()
 	if err != nil {
 		t.Fatal(err)
 	}

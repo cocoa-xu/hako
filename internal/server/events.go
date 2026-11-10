@@ -23,6 +23,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	heartbeat := time.NewTicker(10 * time.Second)
 	defer heartbeat.Stop()
 	for {
+		if !s.authorized(r) {
+			return
+		}
 		payload, err := json.Marshal(s.fleet())
 		if err != nil {
 			return

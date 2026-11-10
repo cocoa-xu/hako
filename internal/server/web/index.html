@@ -10,11 +10,16 @@
   <script src="/app.js" type="module"></script>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="/" aria-label="Hako home"><img src="/icon.svg" width="25" height="25" alt="">hako<span class="brand-kanji" lang="ja">箱</span></a><span class="nav-current">Machines</span><div class="environment"><span id="workspace-label">Your workspace</span></div></header>
-  <main>
+  <header class="topbar"><a class="brand" href="/" aria-label="Hako home"><img src="/icon.svg" width="25" height="25" alt="">hako<span class="brand-kanji" lang="ja">箱</span></a><span class="nav-current">Machines</span><div class="environment"><span id="workspace-label">Your workspace</span><button id="sign-out" class="text-button" type="button" hidden>Sign out</button></div></header>
+  <main id="sign-in" class="sign-in" hidden>
+    <p class="eyebrow">YOUR WORKSPACE</p><h1>Welcome to Hako.</h1>
+    <p class="sign-in-description">Sign in with the administrator key from your server.</p>
+    <form id="sign-in-form"><label for="admin-key">Administrator key</label><input id="admin-key" type="password" autocomplete="current-password" required><button class="action-button primary" type="submit">Sign in</button><p id="sign-in-error" class="form-error" role="alert" hidden></p></form>
+  </main>
+  <main id="workspace" hidden>
     <div class="page-heading"><div><p class="eyebrow" id="fleet-label">YOUR FLEET</p><h1>Machines<span id="machine-count" class="count">0</span></h1></div><div class="fleet-status" id="fleet-status" role="status">Connecting</div></div>
     <div id="connection-error" class="notice" role="alert" hidden></div>
-    <div class="toolbar"><label class="search"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m13 13 4 4"></path></svg><input id="search" type="search" placeholder="Find a machine" aria-label="Find a machine"></label><span id="updated" class="muted">Waiting for the first report</span></div>
+    <div class="toolbar"><label class="search"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"></circle><path d="m13 13 4 4"></path></svg><input id="search" type="search" placeholder="Find a machine" aria-label="Find a machine"></label><div class="toolbar-actions"><span id="updated" class="muted">Waiting for the first report</span><button id="add-machine" class="action-button" type="button">Add Mac</button></div></div>
     <div class="table-scroll"><table class="machines"><thead><tr><th scope="col">Machine</th><th scope="col">CPU</th><th scope="col">Memory</th><th scope="col">Storage</th><th scope="col">Network</th></tr></thead><tbody id="machine-rows"></tbody></table></div>
     <div id="empty-state" class="empty" hidden><span class="empty-mark" lang="ja">箱</span><h2>A place for your Macs.</h2><p>Enrolled machines appear here after their first report.</p></div>
     <div id="no-results" class="empty" hidden><h2>No matching machines</h2><p>Try another name, chip, or address.</p></div>
@@ -36,9 +41,17 @@
         <section class="panel"><h3>Access &amp; security</h3><dl id="security-fields" class="fields"></dl></section>
       </section>
       <section id="network" class="drawer-section" role="tabpanel" aria-labelledby="tab-network" tabindex="0" hidden><section class="panel"><h3>Traffic</h3><div id="traffic-content"></div></section><section class="panel"><div class="section-heading"><h3>Interfaces</h3><label class="toggle"><input id="show-all-interfaces" type="checkbox">Show all interfaces</label></div><div id="network-content"></div></section></section>
-      <section id="device" class="drawer-section" role="tabpanel" aria-labelledby="tab-device" tabindex="0" hidden><div class="section-heading"><h3>Device</h3><span id="device-model" class="muted"></span></div><dl id="hardware-fields" class="fields"></dl><p class="section-description" id="inventory-time"></p><details class="detail-disclosure"><summary>Firmware &amp; platform</summary><dl id="firmware-fields" class="fields"></dl></details><details class="detail-disclosure"><summary>Device identifiers</summary><dl id="identifier-fields" class="fields"></dl></details></section>
+      <section id="device" class="drawer-section" role="tabpanel" aria-labelledby="tab-device" tabindex="0" hidden><div class="section-heading"><h3>Device</h3><span id="device-model" class="muted"></span></div><dl id="hardware-fields" class="fields"></dl><p class="section-description" id="inventory-time"></p><details class="detail-disclosure"><summary>Firmware &amp; platform</summary><dl id="firmware-fields" class="fields"></dl></details><details class="detail-disclosure"><summary>Device identifiers</summary><dl id="identifier-fields" class="fields"></dl></details><div class="machine-actions"><button id="remove-machine" class="text-button danger" type="button">Remove machine</button><p id="machine-action-error" class="form-error" role="alert" hidden></p></div></section>
       <footer class="detail-footer"><span id="agent-info"></span><span>LLDP and session apps are not collected yet.</span></footer>
     </div>
+  </dialog>
+  <dialog id="enrollment" class="management-dialog" aria-labelledby="enrollment-title">
+    <div class="dialog-heading"><h2 id="enrollment-title">Add a Mac</h2><button id="close-enrollment" class="icon-button" type="button" aria-label="Close enrollment">×</button></div>
+    <p class="section-description">Create a key for one Mac. It expires if it is not used in time.</p>
+    <form id="enrollment-form"><label for="enrollment-label">Name <span class="muted">(optional)</span></label><input id="enrollment-label" maxlength="80" placeholder="Build Mac"><label for="enrollment-ttl">Valid for</label><select id="enrollment-ttl"><option value="300">5 minutes</option><option value="900" selected>15 minutes</option><option value="3600">1 hour</option><option value="86400">24 hours</option></select><button class="action-button primary" type="submit">Create key</button></form>
+    <div id="enrollment-result" hidden><label for="enrollment-key">Enrollment key</label><input id="enrollment-key" class="mono" readonly autocomplete="off"><div class="key-actions"><button id="copy-enrollment-key" class="action-button" type="button">Copy key</button><span id="enrollment-expiry" class="muted"></span></div><p class="section-description">Shown once. Use this key when joining your Mac to this server.</p></div>
+    <p id="enrollment-error" class="form-error" role="alert" hidden></p>
+    <details class="detail-disclosure"><summary>Pending keys</summary><div id="pending-enrollments"></div></details>
   </dialog>
 </body>
 </html>

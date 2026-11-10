@@ -20,14 +20,6 @@ if [ ! -x "$binary" ]; then
 fi
 
 mkdir -p "$data_dir"
-if [ ! -f "$data_dir/local-agent.path" ]; then
-  "$binary" enroll --data-dir "$data_dir" --server http://127.0.0.1:8787 > "$data_dir/local-agent.path"
-fi
-config=$(cat "$data_dir/local-agent.path")
-if [ ! -f "$config" ]; then
-  printf 'The local agent credential file is missing: %s\n' "$config" >&2
-  exit 1
-fi
 
 set -- "$binary" serve --data-dir "$data_dir" --listen 127.0.0.1:8787
 if [ -f "$data_dir/listen-addresses" ]; then
@@ -64,7 +56,24 @@ while :; do
   sleep 0.1
 done
 
+if [ ! -f "$data_dir/local-agent.path" ]; then
+  key_file="$data_dir/local-enrollment.key"
+  if [ ! -f "$key_file" ]; then
+    "$binary" invite --admin-key-file "$data_dir/admin.key" --key-out "$key_file" --label 'Local Mac' > /dev/null
+  fi
+  config="$data_dir/worker.json"
+  "$binary" join --server http://127.0.0.1:8787 --config "$config" --key-file "$key_file"
+  rm "$key_file"
+  printf '%s\n' "$config" > "$data_dir/local-agent.path"
+fi
+config=$(cat "$data_dir/local-agent.path")
+if [ ! -f "$config" ]; then
+  printf 'The local agent credential file is missing: %s\n' "$config" >&2
+  exit 1
+fi
+
 printf 'Hako: http://127.0.0.1:8787\n'
+printf 'Administrator key: %s/admin.key\n' "$data_dir"
 if [ -f "$data_dir/listen-addresses" ]; then
   while IFS= read -r address || [ -n "$address" ]; do
     if [ -n "$address" ]; then printf 'Hako: http://%s\n' "$address"; fi

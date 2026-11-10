@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,7 +21,11 @@ type Config struct {
 	DeviceID string `json:"device_id"`
 	Server   string `json:"server"`
 	Token    string `json:"token"`
+	Pending  bool   `json:"pending,omitempty"`
 }
+
+// ErrUnauthorized means the worker must be enrolled again by an administrator.
+var ErrUnauthorized = errors.New("worker credential was rejected or revoked")
 
 func (c Config) Validate() error {
 	u, err := url.Parse(c.Server)
@@ -54,6 +59,9 @@ type Agent struct {
 func New(config Config, collector Collector) (*Agent, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
+	}
+	if config.Pending {
+		return nil, fmt.Errorf("registration has not completed; retry join with the same configuration")
 	}
 	return &Agent{config: config, collector: collector, client: &http.Client{
 		Timeout:       20 * time.Second,
@@ -99,6 +107,9 @@ func (a *Agent) send(ctx context.Context, snapshot report.Snapshot) error {
 	if response.StatusCode == http.StatusConflict {
 		a.deliveredInventory = nil
 		return fmt.Errorf("receiver requested the cached startup inventory")
+	}
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return ErrUnauthorized
 	}
 	if response.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("receiver returned HTTP %d", response.StatusCode)
@@ -147,7 +158,9 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 		case <-ctx.Done():
 			return nil
 		case snapshot := <-samples:
-			if err := a.send(ctx, snapshot); err != nil && ctx.Err() == nil {
+			if err := a.send(ctx, snapshot); errors.Is(err, ErrUnauthorized) {
+				return err
+			} else if err != nil && ctx.Err() == nil {
 				slog.Warn("report failed; retrying with the latest sample", "error", err)
 			}
 		}

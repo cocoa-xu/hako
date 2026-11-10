@@ -18,21 +18,15 @@ import (
 func setup(t *testing.T) (*Server, agent.Config) {
 	t.Helper()
 	directory := t.TempDir()
-	path, err := Enroll(directory, "http://127.0.0.1:8787")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var config agent.Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
-	}
 	s, err := New(directory)
 	if err != nil {
 		t.Fatal(err)
+	}
+	config := agent.Config{DeviceID: randomSecret(16), Token: randomSecret(32), Server: "http://127.0.0.1:8787"}
+	key, _ := issueKey(t, s)
+	response := requestAPI(t, s, "POST", "/api/enroll", key, map[string]string{"device_id": config.DeviceID, "token_hash": hashSecret(config.Token)})
+	if response.Code != http.StatusNoContent {
+		t.Fatal(response.Code)
 	}
 	return s, config
 }
@@ -93,8 +87,12 @@ func TestReceiverRequiresInventoryAndCredential(t *testing.T) {
 	if len(s.machines) != 0 {
 		t.Fatal("rejected report was stored")
 	}
-	if err := os.Remove(filepath.Join(s.directory, "agents", config.DeviceID+".json")); err != nil {
-		t.Fatal(err)
+	revoke := httptest.NewRequest(http.MethodDelete, "http://127.0.0.1:8787/api/machines/"+config.DeviceID, nil)
+	revoke.Header.Set("Authorization", "Bearer "+s.adminKey)
+	revoked := httptest.NewRecorder()
+	s.Handler().ServeHTTP(revoked, revoke)
+	if revoked.Code != http.StatusNoContent {
+		t.Fatal("revoke failed", revoked.Code)
 	}
 	if response := post(t, s, config, snapshot); response.Code != http.StatusUnauthorized {
 		t.Fatal("revoked credential accepted")
@@ -109,6 +107,7 @@ func TestRejectsRebindingAndCrossOriginRequests(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/api/machines", nil)
 		req.Host = test.host
 		req.Header.Set("Origin", test.origin)
+		req.Header.Set("Authorization", "Bearer "+s.adminKey)
 		response := httptest.NewRecorder()
 		s.Handler().ServeHTTP(response, req)
 		if response.Code != http.StatusForbidden {
@@ -134,6 +133,7 @@ func TestExplicitLANHostRetainsOriginChecks(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodGet, "http://"+test.host+"/api/machines", nil)
 		req.Header.Set("Origin", test.origin)
+		req.Header.Set("Authorization", "Bearer "+s.adminKey)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, req)
 		if response.Code != test.want {

@@ -1,10 +1,8 @@
 package server
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +35,9 @@ type Server struct {
 	mu          sync.Mutex
 	machines    map[string]Machine
 	subscribers map[chan struct{}]struct{}
+	registry    registry
+	adminKey    string
+	publicURL   *url.URL
 }
 
 func validID(id string) bool { return len(id) == 32 && strings.Trim(id, "0123456789abcdef") == "" }
@@ -50,31 +51,29 @@ func Prepare(directory string) error {
 	return nil
 }
 
-func Enroll(directory, endpoint string) (string, error) {
-	if err := Prepare(directory); err != nil {
-		return "", err
-	}
-	var id [16]byte
-	var token [32]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return "", err
-	}
-	if _, err := rand.Read(token[:]); err != nil {
-		return "", err
-	}
-	config := agent.Config{DeviceID: hex.EncodeToString(id[:]), Token: hex.EncodeToString(token[:]), Server: endpoint}
-	if err := config.Validate(); err != nil {
-		return "", err
-	}
-	path := filepath.Join(directory, "agents", config.DeviceID+".json")
-	return path, writeJSON(path, config)
+func New(directory string) (*Server, error) {
+	return NewWithOrigin(directory, "")
 }
 
-func New(directory string) (*Server, error) {
+// NewWithOrigin configures the external HTTPS origin used by a reverse proxy.
+func NewWithOrigin(directory, origin string) (*Server, error) {
 	if err := Prepare(directory); err != nil {
 		return nil, err
 	}
 	s := &Server{directory: directory, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{})}
+	if origin != "" {
+		config := agent.Config{Server: origin, DeviceID: strings.Repeat("0", 32), Token: strings.Repeat("0", 64)}
+		if err := config.Validate(); err != nil {
+			return nil, fmt.Errorf("public URL: %w", err)
+		}
+		s.publicURL, _ = url.Parse(strings.TrimRight(origin, "/"))
+	}
+	if err := s.loadRegistry(); err != nil {
+		return nil, err
+	}
+	if err := s.loadAdminKey(); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(filepath.Join(directory, "machines"))
 	if err != nil {
 		return nil, err
@@ -94,7 +93,9 @@ func New(directory string) (*Server, error) {
 		if !validID(machine.Snapshot.DeviceID) || machine.Snapshot.Hardware == nil {
 			return nil, fmt.Errorf("invalid persisted machine %s", entry.Name())
 		}
-		s.machines[machine.Snapshot.DeviceID] = machine
+		if credential, ok := s.registry.Devices[machine.Snapshot.DeviceID]; ok && credential.RevokedAt == nil {
+			s.machines[machine.Snapshot.DeviceID] = machine
+		}
 	}
 	return s, nil
 }
@@ -107,8 +108,16 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 		}
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/machines", s.list)
-	mux.HandleFunc("GET /api/events", s.events)
+	mux.HandleFunc("GET /api/machines", s.requireAdmin(s.list))
+	mux.HandleFunc("GET /api/events", s.requireAdmin(s.events))
+	mux.HandleFunc("GET /api/session", s.requireAdmin(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	mux.HandleFunc("POST /api/session", s.login)
+	mux.HandleFunc("POST /api/logout", s.requireAdmin(s.logout))
+	mux.HandleFunc("POST /api/enroll", s.register)
+	mux.HandleFunc("POST /api/enrollments", s.requireAdmin(s.createEnrollment))
+	mux.HandleFunc("GET /api/enrollments", s.requireAdmin(s.listEnrollments))
+	mux.HandleFunc("DELETE /api/enrollments/{id}", s.requireAdmin(s.revokeEnrollment))
+	mux.HandleFunc("DELETE /api/machines/{id}", s.requireAdmin(s.revokeMachine))
 	mux.HandleFunc("POST /api/reports", s.receive)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	web, _ := fs.Sub(assets, "web")
@@ -123,13 +132,18 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 			host = r.Host
 		}
 		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || (!ip.IsLoopback() && !allowedHosts[ip.String()])) {
+		publicHost := s.publicURL != nil && r.Host == s.publicURL.Host
+		if !publicHost && host != "localhost" && (ip == nil || (!ip.IsLoopback() && !allowedHosts[ip.String()])) {
 			http.Error(w, "This host is not configured for the receiver.", http.StatusForbidden)
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" {
 			u, err := url.Parse(origin)
-			if err != nil || u.Host != r.Host || u.Scheme != "http" {
+			scheme := "http"
+			if s.secureRequest(r) {
+				scheme = "https"
+			}
+			if err != nil || u.Host != r.Host || u.Scheme != scheme || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 				http.Error(w, "Cross-origin requests are not allowed.", http.StatusForbidden)
 				return
 			}
@@ -176,15 +190,14 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid report identity or version.", http.StatusBadRequest)
 		return
 	}
-	data, err := os.ReadFile(filepath.Join(s.directory, "agents", snapshot.DeviceID+".json"))
-	var credential agent.Config
-	if err != nil || json.Unmarshal(data, &credential) != nil || len(credential.Token) < 32 ||
-		subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+credential.Token)) != 1 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	credential, exists := s.registry.Devices[snapshot.DeviceID]
+	token, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !exists || credential.RevokedAt != nil || !bearer || subtle.ConstantTimeCompare([]byte(hashSecret(token)), []byte(credential.TokenHash)) != 1 {
 		http.Error(w, "Invalid agent credential.", http.StatusUnauthorized)
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	previous, exists := s.machines[snapshot.DeviceID]
 	if snapshot.Hardware == nil {
 		if !exists {
@@ -199,12 +212,7 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.machines[snapshot.DeviceID] = machine
-	for subscriber := range s.subscribers {
-		select {
-		case subscriber <- struct{}{}:
-		default:
-		}
-	}
+	s.notifyLocked()
 	w.WriteHeader(http.StatusNoContent)
 }
 

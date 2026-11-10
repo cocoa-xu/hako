@@ -983,3 +983,53 @@ h3 {
     padding-inline:20px;
   }
 }
+
+.text-button {
+  padding:0;
+  border:0;
+  background:transparent;
+  color:var(--green);
+  font:inherit;
+  cursor:pointer;
+}
+
+.action-button {
+  border:1px solid #d9e0d5;
+  border-radius:5px;
+  padding:8px 13px;
+  background:#fff;
+  color:#344438;
+  font:inherit;
+  font-size:12px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+
+.action-button:hover { background:#f1f5ef; }
+.action-button.primary { background:#45634c; border-color:#45634c; color:#fff; }
+.action-button:disabled { cursor:wait; opacity:.6; }
+.toolbar-actions { display:flex; align-items:center; gap:18px; }
+.sign-in { max-width:460px; padding:100px 24px 40px; }
+.sign-in h1 { font-size:28px; }
+.sign-in-description { color:var(--muted); font-size:13px; line-height:1.7; margin:16px 0 28px; }
+.sign-in label,.management-dialog label { display:block; font-size:12px; margin:18px 0 8px; }
+.sign-in input,.management-dialog input,.management-dialog select {
+  width:100%; border:1px solid #d9e0d5; border-radius:5px; padding:10px 11px; background:#fff; color:inherit; font:inherit; font-size:13px;
+}
+.sign-in form>.action-button,.management-dialog form>.action-button { margin-top:20px; }
+.form-error { color:#9b4f42; font-size:12px; line-height:1.6; }
+.management-dialog { width:440px; max-width:calc(100vw - 40px); max-height:calc(100dvh - 48px); border:1px solid var(--line); border-radius:8px; padding:24px; color:inherit; background:#fbfcfa; }
+.management-dialog::backdrop { background:#172d2026; }
+.dialog-heading { display:flex; justify-content:space-between; align-items:center; gap:20px; }
+.dialog-heading h2 { font-size:20px; font-weight:550; margin:0; letter-spacing:-.4px; }
+.key-actions { display:flex; align-items:center; gap:14px; margin-top:12px; font-size:11px; }
+.machine-actions { margin-top:24px; padding-top:20px; border-top:1px solid var(--line); font-size:12px; }
+.danger { color:#9b5848; }
+.pending-key { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:16px; font-size:12px; }
+.pending-key small { display:block; color:var(--muted); font-size:10px; margin-top:5px; }
+#pending-enrollments>p { color:var(--muted); font-size:12px; margin-top:18px; }
+@media(max-width:560px) {
+  .toolbar-actions { flex-direction:column-reverse; align-items:flex-end; gap:9px; }
+  .toolbar-actions>.muted { font-size:10px; }
+  .sign-in { padding-top:64px; }
+}

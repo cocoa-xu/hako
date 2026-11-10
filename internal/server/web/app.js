@@ -417,9 +417,107 @@ detailTabs.forEach((button, index) => {
     next.focus();
   });
 });
-const events = new EventSource('/api/events');
-events.addEventListener('machines', event => {
-  try { receiveFleet(JSON.parse(event.data)); } catch { disconnected(); }
+let events = null;
+let checkingSession = false;
+function showSignIn() {
+  events?.close(); events = null;
+  if ($('detail').open) $('detail').close();
+  if ($('enrollment').open) $('enrollment').close();
+  machines = []; selectedID = null; connected = false;
+  $('machine-rows').replaceChildren();
+  $('workspace').hidden = true; $('sign-out').hidden = true; $('sign-in').hidden = false;
+}
+function startEvents() {
+  $('sign-in').hidden = true; $('workspace').hidden = false; $('sign-out').hidden = false;
+  events?.close();
+  events = new EventSource('/api/events');
+  events.addEventListener('machines', event => {
+    try { receiveFleet(JSON.parse(event.data)); } catch { disconnected(); }
+  });
+  events.addEventListener('error', async () => {
+    disconnected();
+    if (checkingSession) return;
+    checkingSession = true;
+    try { if ((await fetch('/api/session')).status === 401) showSignIn(); }
+    catch { /* The stream reconnects when the receiver returns. */ }
+    finally { checkingSession = false; }
+  });
+}
+async function api(path, method = 'GET', body) {
+  const response = await fetch(path, {method, headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
+  if (response.status === 401) { showSignIn(); throw new Error('Your session expired. Sign in again.'); }
+  if (!response.ok) throw new Error((await response.text()).trim() || `Request failed (${response.status}).`);
+  return response.status === 204 ? null : response.json();
+}
+function showFormError(id, error) { $(id).textContent = error.message; $(id).hidden = false; }
+$('sign-in-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = event.submitter;
+  button.disabled = true; $('sign-in-error').hidden = true;
+  try {
+    const response = await fetch('/api/session', {method: 'POST', headers: {Authorization: `Bearer ${$('admin-key').value.trim()}`}});
+    if (!response.ok) throw new Error(response.status === 401 ? 'The administrator key is not valid.' : 'Unable to sign in. Try again.');
+    $('admin-key').value = ''; startEvents();
+  } catch (error) { showFormError('sign-in-error', error); }
+  finally { button.disabled = false; }
 });
-events.addEventListener('error', disconnected);
+$('sign-out').addEventListener('click', async () => {
+  try { await api('/api/logout', 'POST'); showSignIn(); }
+  catch (error) { $('connection-error').textContent = error.message; $('connection-error').hidden = false; }
+});
+async function pendingEnrollments() {
+  const items = await api('/api/enrollments');
+  const list = $('pending-enrollments'); list.replaceChildren();
+  const pending = items.filter(item => !item.device_id && !item.revoked && new Date(item.expires_at) > Date.now()).sort((a,b) => b.created_at.localeCompare(a.created_at));
+  for (const item of pending) {
+    const row = node('div', null, 'pending-key'), name = node('span', item.label || 'Unnamed key');
+    name.append(node('small', `Expires ${displayTime(item.expires_at)}`));
+    const revoke = node('button', 'Revoke', 'text-button danger'); revoke.type = 'button';
+    revoke.addEventListener('click', async () => {
+      revoke.disabled = true;
+      try { await api(`/api/enrollments/${encodeURIComponent(item.id)}`, 'DELETE'); await pendingEnrollments(); }
+      catch (error) { showFormError('enrollment-error', error); revoke.disabled = false; }
+    });
+    row.append(name, revoke); list.append(row);
+  }
+  if (!pending.length) list.append(node('p', 'No pending keys.'));
+}
+$('add-machine').addEventListener('click', async () => {
+  $('enrollment-error').hidden = true;
+  $('enrollment').showModal();
+  try { await pendingEnrollments(); } catch (error) { showFormError('enrollment-error', error); }
+});
+$('close-enrollment').addEventListener('click', () => $('enrollment').close());
+$('enrollment').addEventListener('close', () => {
+  $('enrollment-key').value = ''; $('enrollment-result').hidden = true; $('enrollment-form').hidden = false;
+  $('enrollment-form').reset(); $('copy-enrollment-key').textContent = 'Copy key';
+});
+$('enrollment-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = event.submitter; button.disabled = true; $('enrollment-error').hidden = true;
+  try {
+    const result = await api('/api/enrollments', 'POST', {label: $('enrollment-label').value, ttl_seconds: Number($('enrollment-ttl').value)});
+    $('enrollment-key').value = result.key; $('enrollment-form').hidden = true; $('enrollment-result').hidden = false;
+    $('enrollment-expiry').textContent = `Expires ${displayTime(result.expires_at)}`;
+    await pendingEnrollments();
+  } catch (error) { showFormError('enrollment-error', error); }
+  finally { button.disabled = false; }
+});
+$('copy-enrollment-key').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('enrollment-key').value); $('copy-enrollment-key').textContent = 'Copied'; }
+  catch { $('enrollment-key').select(); $('copy-enrollment-key').textContent = 'Selected for copying'; }
+});
+$('remove-machine').addEventListener('click', async () => {
+  const machine = machines.find(item => item.snapshot.device_id === selectedID);
+  if (!machine || !window.confirm(`Remove ${data(machine.snapshot.system)?.hostname || 'this machine'}? Its credentials will be revoked. A new enrollment key is required to join again.`)) return;
+  $('remove-machine').disabled = true; $('machine-action-error').hidden = true;
+  try { await api(`/api/machines/${encodeURIComponent(selectedID)}`, 'DELETE'); if ($('detail').open) $('detail').close(); }
+  catch (error) { showFormError('machine-action-error', error); }
+  finally { $('remove-machine').disabled = false; }
+});
+async function initialize() {
+  try { if ((await fetch('/api/session')).ok) startEvents(); else showSignIn(); }
+  catch { showSignIn(); showFormError('sign-in-error', new Error('The server is unavailable. Try signing in when it returns.')); }
+}
 window.setInterval(() => { if (machines.length) render(); }, 2000);
+initialize();
