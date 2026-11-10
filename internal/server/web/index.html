@@ -18,20 +18,27 @@
     <div class="table-scroll"><table class="machines"><thead><tr><th scope="col">Machine</th><th scope="col">CPU</th><th scope="col">Memory</th><th scope="col">Storage</th></tr></thead><tbody id="machine-rows"></tbody></table></div>
     <div id="empty-state" class="empty" hidden><span class="empty-mark" lang="ja">箱</span><h2>A place for your Macs.</h2><p>Enrolled machines appear here after their first report.</p></div>
     <div id="no-results" class="empty" hidden><h2>No matching machines</h2><p>Try another name, chip, or address.</p></div>
-    <article id="detail" hidden aria-label="Selected machine details">
-      <div class="detail-heading"><div><p class="eyebrow">MACHINE OVERVIEW</p><h2 id="detail-name"></h2><p class="subtitle" id="detail-subtitle"></p></div><span id="detail-status" class="status-pill"></span></div>
-      <nav class="detail-tabs" aria-label="Machine sections"><a href="#overview" class="active">Overview</a><a href="#network">Network</a><a href="#device">Device</a></nav>
-      <div id="overview" class="overview-grid">
-        <section class="panel" aria-labelledby="memory-title"><div class="section-heading"><h3 id="memory-title">Memory</h3><span id="memory-pressure" class="small-status"></span></div><div id="memory-content"></div></section>
-        <section class="panel" aria-labelledby="storage-title"><div class="section-heading"><h3 id="storage-title">Storage</h3><span class="muted">Data volume</span></div><div id="storage-content"></div></section>
-        <section class="panel"><h3>System</h3><dl id="system-fields" class="fields"></dl></section>
-        <section class="panel"><h3>Access &amp; security</h3><dl id="security-fields" class="fields"></dl></section>
-      </div>
-      <section id="network" class="wide-section"><div class="section-heading"><div><h3>Network</h3><p class="section-description">Interfaces and their addresses</p></div><label class="toggle"><input id="show-all-interfaces" type="checkbox">Show all interfaces</label></div><div id="network-content"></div></section>
-      <section id="device" class="wide-section"><div class="section-heading"><div><h3>Device</h3><p class="section-description" id="inventory-time"></p></div><span id="device-model" class="muted"></span></div><div class="device-grid"><dl id="hardware-fields" class="fields"></dl><dl id="firmware-fields" class="fields"></dl></div><details class="identifiers"><summary>Device identifiers</summary><dl id="identifier-fields" class="fields"></dl></details></section>
-      <footer class="detail-footer"><span id="agent-info"></span><span>LLDP and session apps are not collected yet.</span></footer>
-    </article>
     <footer class="page-footer"><span>Hako <span lang="ja">箱</span></span><span>Your machines, in one place.</span></footer>
   </main>
+  <dialog id="detail" aria-labelledby="detail-name">
+    <header class="drawer-header">
+      <div class="drawer-toolbar"><p class="eyebrow">MACHINE DETAILS</p><button id="close-detail" class="icon-button" type="button" aria-label="Close machine details" title="Close (Esc)" autofocus><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></button></div>
+      <h2 id="detail-name"></h2><p class="subtitle" id="detail-subtitle"></p>
+      <div class="detail-meta"><span id="detail-status" class="status-pill"></span><span id="detail-last-report" class="muted"></span></div>
+      <p id="detail-connection-error" class="drawer-notice" role="status" hidden>Receiver unavailable. Showing the last received data.</p>
+    </header>
+    <nav class="detail-tabs" role="tablist" aria-label="Machine sections"><button id="tab-overview" type="button" role="tab" data-section="overview" aria-controls="overview" aria-selected="true">Overview</button><button id="tab-network" type="button" role="tab" data-section="network" aria-controls="network" aria-selected="false" tabindex="-1">Network</button><button id="tab-device" type="button" role="tab" data-section="device" aria-controls="device" aria-selected="false" tabindex="-1">Device</button></nav>
+    <div id="detail-scroll" class="drawer-scroll">
+      <section id="overview" class="drawer-section" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+        <section class="panel"><h3>System</h3><dl id="system-fields" class="fields"></dl></section>
+        <section class="panel" aria-labelledby="memory-title"><div class="section-heading"><h3 id="memory-title">Memory</h3><span id="memory-pressure" class="small-status"></span></div><div id="memory-content"></div></section>
+        <section class="panel" aria-labelledby="storage-title"><div class="section-heading"><h3 id="storage-title">Storage</h3><span class="muted">Data volume</span></div><div id="storage-content"></div></section>
+        <section class="panel"><h3>Access &amp; security</h3><dl id="security-fields" class="fields"></dl></section>
+      </section>
+      <section id="network" class="drawer-section" role="tabpanel" aria-labelledby="tab-network" tabindex="0" hidden><div class="section-heading"><h3>Network</h3><label class="toggle"><input id="show-all-interfaces" type="checkbox">Show all interfaces</label></div><div id="network-content"></div></section>
+      <section id="device" class="drawer-section" role="tabpanel" aria-labelledby="tab-device" tabindex="0" hidden><div class="section-heading"><h3>Device</h3><span id="device-model" class="muted"></span></div><dl id="hardware-fields" class="fields"></dl><p class="section-description" id="inventory-time"></p><details class="detail-disclosure"><summary>Firmware &amp; platform</summary><dl id="firmware-fields" class="fields"></dl></details><details class="detail-disclosure"><summary>Device identifiers</summary><dl id="identifier-fields" class="fields"></dl></details></section>
+      <footer class="detail-footer"><span id="agent-info"></span><span>LLDP and session apps are not collected yet.</span></footer>
+    </div>
+  </dialog>
 </body>
 </html>

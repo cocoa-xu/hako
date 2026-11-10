@@ -25,6 +25,12 @@ If Go is installed in `~/sdk/go1.27.3` and is not on `PATH`, build with
 Open <http://127.0.0.1:8787>. The script starts the receiver and agent, reuses the
 local device identity, and stops both when you press Control-C.
 
+Selecting a machine opens a detail drawer from the right while keeping the fleet
+on the same page. The drawer occupies roughly a third of a desktop window and
+the full width on a phone. Overview, Network, and Device tabs share an independent
+scroll area; firmware and identifiers expand on demand. Close with the X, Escape,
+or a click outside. Focus returns to the selected machine.
+
 To also listen on a LAN address, add one `IP:port` per line to the ignored
 `.local/listen-addresses` file. For example:
 

@@ -120,14 +120,16 @@ function cpuCell(snapshot, hardware) {
 }
 function renderList() {
   const filtered = matchingMachines();
-  if (filtered.length && !filtered.some(m => m.snapshot.device_id === selectedID)) selectedID = filtered[0].snapshot.device_id;
   const focusedDevice = document.activeElement?.dataset.deviceId;
   const rows = $('machine-rows'); rows.replaceChildren();
   for (const machine of filtered) {
     const s = machine.snapshot, hw = data(s.hardware), system = data(s.system);
     const tr = node('tr', null, s.device_id === selectedID ? 'selected' : '');
     const first = node('td'), button = node('button', null, 'machine-button');
-    button.type = 'button'; button.setAttribute('aria-pressed', String(s.device_id === selectedID));
+    button.type = 'button';
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.setAttribute('aria-controls', 'detail');
+    button.setAttribute('aria-expanded', String(s.device_id === selectedID));
     button.dataset.deviceId = s.device_id;
     const isOnline = online(machine), presence = dot(isOnline);
     presence.classList.add('machine-presence');
@@ -142,7 +144,7 @@ function renderList() {
       node('span', primaryAddress(s), 'machine-address'),
     );
     button.append(presence, name);
-    button.addEventListener('click', () => { selectedID = s.device_id; render(); });
+    button.addEventListener('click', () => openDetail(s.device_id));
     first.append(button);
     tr.append(first, cpuCell(s, hw), memoryCell(s, hw), storageCell(s.storage));
     rows.append(tr);
@@ -155,12 +157,6 @@ function renderList() {
   $('fleet-status').replaceChildren(dot(connected && available > 0), document.createTextNode(connected ? `${available} online · ${machines.length} total` : 'Receiver unavailable'));
   const newest = machines.reduce((latest, m) => Math.max(latest, new Date(m.received_at).getTime()), 0);
   $('updated').textContent = isDemo ? 'Sample data' : newest ? `Last report ${age(newest)}` : 'Waiting for the first report';
-}
-function metric(value, label) {
-  const wrap = node('div'), parts = value.split(' '), number = node('div', parts[0], 'metric');
-  if (parts[1]) number.append(node('span', parts[1], 'unit'));
-  wrap.append(number, node('p', label, 'metric-label'));
-  return wrap;
 }
 function barPiece(fraction, className) {
   const piece = node('div', null, `bar-piece ${className}`);
@@ -229,7 +225,6 @@ function renderMemory(s, hw) {
   $('memory-pressure').textContent = m && m.pressure !== 'unknown' ? `${m.pressure[0].toUpperCase()}${m.pressure.slice(1)} pressure` : 'Pressure unavailable';
   $('memory-pressure').className = `small-status ${m?.pressure || ''}`;
   if (!m || !hw) { box.append(stateLabel(!m ? s.memory : s.hardware)); return; }
-  box.append(metric(bytes(hw.memory_bytes), 'Memory installed'));
   const bar = node('div', null, 'bar'), legend = node('div', null, 'legend');
   let remaining = 1;
   for (const [label, value, color] of memorySegments(m)) {
@@ -238,15 +233,22 @@ function renderMemory(s, hw) {
     const item = node('span', null, 'legend-item'); item.append(node('span', null, `swatch ${color}`), document.createTextNode(`${label} ${bytes(value)}`)); legend.append(item);
   }
   const other = node('span', null, 'legend-item'); other.append(node('span', null, 'swatch'), document.createTextNode('Other / free')); legend.append(other);
-  box.append(bar, legend, node('p', `${bytes(m.swap_used_bytes)} swap used · ${bytes(m.free_bytes)} free pages`, 'metric-note'));
+  const fields = node('dl', null, 'fields resource-fields');
+  field(fields, 'Installed', bytes(hw.memory_bytes));
+  field(fields, 'Free pages', bytes(m.free_bytes));
+  field(fields, 'Swap used', `${bytes(m.swap_used_bytes)} / ${bytes(m.swap_total_bytes)}`);
+  box.append(bar, legend, fields);
 }
 function renderStorage(s) {
   const box = $('storage-content'), disk = data(s.storage); box.replaceChildren();
   if (!disk) { box.append(stateLabel(s.storage)); return; }
   const used = Math.max(0, disk.total_bytes - disk.free_bytes);
   const bar = node('div', null, 'bar'); bar.append(barPiece(used / disk.total_bytes, 'used'));
-  const scale = node('div', null, 'storage-scale'); scale.append(node('span', `${bytes(used)} used`), node('span', `${bytes(disk.total_bytes)} total`));
-  box.append(metric(bytes(disk.available_bytes), 'Available on the startup data volume'), bar, scale, node('p', disk.path, 'metric-note'));
+  const fields = node('dl', null, 'fields resource-fields');
+  field(fields, 'Capacity', bytes(disk.total_bytes));
+  field(fields, 'Used', bytes(used));
+  field(fields, 'Available', bytes(disk.available_bytes));
+  box.append(bar, fields, node('p', disk.path, 'metric-note'));
 }
 function renderNetwork(s) {
   const box = $('network-content'); box.replaceChildren();
@@ -254,29 +256,31 @@ function renderNetwork(s) {
   if (!interfaces) { box.append(stateLabel(s.network)); return; }
   const visible = interfaces.filter(i => $('show-all-interfaces').checked || (i.up && !i.loopback && i.addresses.length > 0 && i.mac));
   if (!visible.length) { box.append(node('p', 'No active interfaces with a hardware address. Select “Show all interfaces” to inspect the rest.', 'unavailable')); return; }
-  const table = node('table', null, 'network-table'), head = node('thead'), row = node('tr');
-  for (const label of ['Interface', 'MAC address', 'IP address', 'State']) { const th = node('th', label); th.scope = 'col'; row.append(th); }
-  head.append(row); table.append(head);
-  const body = node('tbody');
   for (const iface of visible) {
-    const row = node('tr'), addresses = node('td');
+    const item = node('section', null, 'network-interface'), heading = node('div', null, 'interface-heading');
+    const state = node('span', iface.up ? 'Up' : 'Down', 'muted');
+    state.title = 'Interface administrative state';
+    heading.append(node('h4', iface.name), state);
+    const fields = node('dl', null, 'fields'), addresses = node('span');
     for (const address of iface.addresses) addresses.append(node('span', address, 'address'));
     if (!iface.addresses.length) addresses.textContent = 'No address';
-    row.append(node('td', iface.name), node('td', iface.mac || 'Not applicable', 'mac'), addresses, node('td', iface.up ? 'Up' : 'Down'));
-    body.append(row);
+    field(fields, 'IP address', addresses, true);
+    field(fields, 'MAC address', iface.mac || 'Not applicable', true);
+    item.append(heading, fields);
+    box.append(item);
   }
-  table.append(body); box.append(table);
 }
 function renderDetail() {
-  const machine = matchingMachines().find(m => m.snapshot.device_id === selectedID);
-  $('detail').hidden = !machine;
-  if (!machine) return;
+  const machine = machines.find(m => m.snapshot.device_id === selectedID);
+  if (!machine) { if ($('detail').open) $('detail').close(); return; }
   const s = machine.snapshot, hw = data(s.hardware), system = data(s.system);
   $('detail-name').textContent = system?.hostname || 'Unknown machine';
   $('detail-subtitle').textContent = [hw?.model_name, hw?.chip, hw?.memory_bytes ? bytes(hw.memory_bytes) : null].filter(Boolean).join(' · ');
   const isOnline = online(machine);
   $('detail-status').className = `status-pill${isOnline ? '' : ' stale'}`;
   $('detail-status').replaceChildren(dot(isOnline), document.createTextNode(isOnline ? 'Online' : `Last seen ${age(machine.received_at)}`));
+  $('detail-last-report').textContent = isOnline ? `Reported ${age(machine.received_at)}` : 'Showing the last report';
+  $('detail-connection-error').hidden = connected;
   renderMemory(s, hw); renderStorage(s);
   clearFields('system-fields', system ? [
     ['macOS', `${system.os_version}${system.os_extra ? ` ${system.os_extra}` : ''} (${system.os_build})`],
@@ -290,7 +294,7 @@ function renderDetail() {
   ]);
   renderNetwork(s);
   $('device-model').textContent = hw?.model_id || '';
-  $('inventory-time').textContent = s.hardware?.observed_at ? `Inventory collected at agent startup · ${displayTime(s.hardware.observed_at)}` : 'Inventory unavailable';
+  $('inventory-time').textContent = s.hardware?.observed_at ? `Inventory from ${displayTime(s.hardware.observed_at)}` : 'Inventory unavailable';
   clearFields('hardware-fields', hw ? [
     ['Model', hw.model_name], ['Model number', hw.model_number, true], ['Chip', hw.chip],
     ['CPU cores', `${hw.physical_cores} physical · ${hw.logical_cores} logical`],
@@ -299,6 +303,24 @@ function renderDetail() {
   clearFields('firmware-fields', hw ? [['Architecture', hw.architecture, true], ['System firmware', hw.firmware, true], ['OS loader', hw.os_loader, true], ['Installed memory', bytes(hw.memory_bytes)]] : []);
   clearFields('identifier-fields', hw ? [['Serial number', hw.serial_number, true], ['Hardware UUID', hw.hardware_uuid, true], ['Provisioning UDID', hw.provisioning_id, true], ['Hako device ID', s.device_id, true]] : []);
   $('agent-info').textContent = `Agent ${s.agent.version} · ${s.agent.uid === 0 ? 'Collected as root' : `Collected as user ${s.agent.uid}`} · Reported ${age(machine.received_at)}`;
+}
+function openDetail(id) {
+  if (!machines.some(machine => machine.snapshot.device_id === id)) return;
+  selectedID = id;
+  render();
+  document.body.classList.add('drawer-open');
+  $('detail').showModal();
+  selectDetailTab('overview');
+  $('close-detail').focus({preventScroll: true});
+}
+function selectDetailTab(id) {
+  document.querySelectorAll('.drawer-section').forEach(section => { section.hidden = section.id !== id; });
+  document.querySelectorAll('.detail-tabs button').forEach(button => {
+    const active = button.dataset.section === id;
+    button.setAttribute('aria-selected', String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  $('detail-scroll').scrollTop = 0;
 }
 function render() { renderList(); renderDetail(); }
 async function refresh() {
@@ -314,7 +336,6 @@ async function refresh() {
     }
     machines = result.machines;
     clockOffset = new Date(result.server_time).getTime() - Date.now();
-    if (!machines.some(m => m.snapshot.device_id === selectedID)) selectedID = machines[0]?.snapshot.device_id || null;
     connected = true; $('connection-error').hidden = true;
     render();
   } catch (error) {
@@ -326,9 +347,32 @@ async function refresh() {
 }
 $('search').addEventListener('input', render);
 $('show-all-interfaces').addEventListener('change', renderDetail);
-document.querySelectorAll('.detail-tabs a').forEach(link => link.addEventListener('click', () => {
-  document.querySelectorAll('.detail-tabs a').forEach(other => other.classList.toggle('active', other === link));
-}));
+$('close-detail').addEventListener('click', () => $('detail').close());
+$('detail').addEventListener('close', () => {
+  const previousID = selectedID;
+  selectedID = null;
+  document.body.classList.remove('drawer-open');
+  renderList();
+  const trigger = [...document.querySelectorAll('.machine-button')].find(button => button.dataset.deviceId === previousID);
+  (trigger || $('search')).focus({preventScroll: true});
+});
+$('detail').addEventListener('click', event => {
+  if (event.target !== $('detail')) return;
+  const bounds = $('detail').getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) $('detail').close();
+});
+const detailTabs = [...document.querySelectorAll('.detail-tabs button')];
+detailTabs.forEach((button, index) => {
+  button.addEventListener('click', () => selectDetailTab(button.dataset.section));
+  button.addEventListener('keydown', event => {
+    const destinations = {ArrowRight: (index + 1) % detailTabs.length, ArrowLeft: (index + detailTabs.length - 1) % detailTabs.length, Home: 0, End: detailTabs.length - 1};
+    if (!(event.key in destinations)) return;
+    event.preventDefault();
+    const next = detailTabs[destinations[event.key]];
+    selectDetailTab(next.dataset.section);
+    next.focus();
+  });
+});
 if (isDemo) {
   document.title = 'Hako · Demo';
   $('workspace-label').textContent = 'Demo workspace';
