@@ -76,7 +76,7 @@ function renderList() {
   const focusedDevice = document.activeElement?.dataset.deviceId;
   const rows = $('machine-rows'); rows.replaceChildren();
   for (const machine of filtered) {
-    const s = machine.snapshot, hw = data(s.hardware), system = data(s.system), storage = data(s.storage);
+    const s = machine.snapshot, hw = data(s.hardware), system = data(s.system);
     const tr = node('tr', null, s.device_id === selectedID ? 'selected' : '');
     const first = node('td'), button = node('button', null, 'machine-button');
     button.type = 'button'; button.setAttribute('aria-pressed', String(s.device_id === selectedID));
@@ -89,7 +89,7 @@ function renderList() {
     first.append(button);
     const status = node('span', null, 'row-status'); status.append(dot(online(machine)), document.createTextNode(online(machine) ? 'Online' : 'No recent report'));
     const statusCell = node('td'); statusCell.append(status);
-    tr.append(first, node('td', hw?.chip || 'Unavailable'), memoryCell(s, hw), node('td', storage ? bytes(storage.available_bytes) : 'Unavailable'), node('td', system?.os_version || 'Unavailable'), statusCell);
+    tr.append(first, node('td', hw?.chip || 'Unavailable'), memoryCell(s, hw), storageCell(s.storage), node('td', system?.os_version || 'Unavailable'), statusCell);
     rows.append(tr);
     if (focusedDevice === s.device_id) button.focus({preventScroll: true});
   }
@@ -115,6 +115,18 @@ function barPiece(fraction, className) {
 function memorySegments(memory) {
   return [['Active', memory.active_bytes, 'active'], ['Wired', memory.wired_bytes, 'wired'], ['Compressed', memory.compressed_bytes, 'compressed']];
 }
+function usageSummary(used, free, bar, explanation) {
+  const gigabytes = value => `${(value / 1e9).toFixed(1)} GB`;
+  const summary = node('div', null, 'usage-summary');
+  const description = `${gigabytes(used)} used / ${gigabytes(free)} free`;
+  summary.title = `${description}. ${explanation}`;
+  bar.setAttribute('aria-hidden', 'true');
+  const values = node('span', null, 'usage-values');
+  values.setAttribute('aria-label', description);
+  values.append(node('span', gigabytes(used)), document.createTextNode(` / ${gigabytes(free)}`));
+  summary.append(bar, values);
+  return summary;
+}
 function memoryCell(snapshot, hardware) {
   const cell = node('td'), memory = data(snapshot.memory), total = hardware?.memory_bytes;
   if (!memory || !hardware) {
@@ -127,12 +139,7 @@ function memoryCell(snapshot, hardware) {
     return cell;
   }
   const free = Math.min(total, memory.free_bytes), used = total - free;
-  const gigabytes = value => `${(value / 1e9).toFixed(1)} GB`;
-  const summary = node('div', null, 'memory-summary'), bar = node('div', null, 'bar');
-  const description = `${gigabytes(used)} used / ${gigabytes(free)} free`;
-  summary.title = `${description}. Used includes cached and inactive memory; free is the reported free pages.`;
-  if (memory.pressure && memory.pressure !== 'unknown') summary.title += ` Memory pressure: ${memory.pressure}.`;
-  bar.setAttribute('aria-hidden', 'true');
+  const bar = node('div', null, 'bar');
   let remaining = used;
   for (const [, value, color] of segments) {
     const amount = Math.min(remaining, value);
@@ -140,11 +147,26 @@ function memoryCell(snapshot, hardware) {
     remaining -= amount;
   }
   bar.append(barPiece(remaining / total, 'other-used'));
-  const values = node('span', null, 'memory-values');
-  values.setAttribute('aria-label', description);
-  values.append(node('span', gigabytes(used)), document.createTextNode(` / ${gigabytes(free)}`));
-  summary.append(bar, values);
+  const summary = usageSummary(used, free, bar, 'Used includes cached and inactive memory; free is the reported free pages.');
+  if (memory.pressure && memory.pressure !== 'unknown') summary.title += ` Memory pressure: ${memory.pressure}.`;
   cell.append(summary);
+  return cell;
+}
+function storageCell(section) {
+  const cell = node('td'), storage = data(section);
+  if (!storage) {
+    cell.append(stateLabel(section));
+    return cell;
+  }
+  const total = storage.total_bytes;
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(storage.free_bytes) || storage.free_bytes < 0) {
+    cell.append(node('span', 'Unavailable', 'field-state'));
+    return cell;
+  }
+  const free = Math.min(total, storage.free_bytes), used = total - free;
+  const bar = node('div', null, 'bar');
+  bar.append(barPiece(used / total, 'used'));
+  cell.append(usageSummary(used, free, bar, 'Startup data volume; free is the filesystem-reported free space.'));
   return cell;
 }
 function renderMemory(s, hw) {

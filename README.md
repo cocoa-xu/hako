@@ -139,6 +139,9 @@ section is displayed as unavailable rather than silently reusing an old value.
 - The storage figure describes the startup data filesystem, not physical SSD
   capacity or a sum of APFS volumes. Available space does not include a custom
   estimate of purgeable files.
+- The fleet table shows a storage bar and used / free values in decimal GB.
+  Used is total minus filesystem-reported free space, matching the detail bar.
+  Available space remains a separate value in the detail view.
 - Interface "Up" is the OS interface flag, not proof of internet connectivity.
 - Automatic login reflects the configured preference, not a guarantee that the
   next login will be automatic.

@@ -300,19 +300,19 @@ h1 {
   margin-top:5px;
 }
 
-.memory-summary {
+.usage-summary {
   width:154px;
   display:grid;
   gap:8px;
 }
 
-.memory-values {
+.usage-values {
   font-size:11px;
   font-variant-numeric:tabular-nums;
   color:var(--muted);
 }
 
-.memory-values>span {
+.usage-values>span {
   color:#303a33;
 }
 
