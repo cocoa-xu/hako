@@ -67,7 +67,7 @@ function matchingMachines() {
   const query = $('search').value.toLowerCase().trim();
   return machines.filter(({snapshot: s}) => {
     const system = data(s.system), hw = data(s.hardware);
-    return [system?.hostname, hw?.model_name, hw?.chip, ...(data(s.network) || []).flatMap(i => i.addresses)].join(' ').toLowerCase().includes(query);
+    return [system?.hostname, system?.os_version, hw?.model_name, hw?.chip, ...(data(s.network) || []).flatMap(i => i.addresses)].join(' ').toLowerCase().includes(query);
   });
 }
 function coreConfiguration(hardware) {
@@ -129,15 +129,22 @@ function renderList() {
     const first = node('td'), button = node('button', null, 'machine-button');
     button.type = 'button'; button.setAttribute('aria-pressed', String(s.device_id === selectedID));
     button.dataset.deviceId = s.device_id;
-    const glyph = node('span', null, 'machine-glyph'); glyph.setAttribute('aria-hidden', 'true');
-    const icon = node('img'); icon.src = '/machine.svg'; icon.alt = ''; icon.width = 20; icon.height = 20; glyph.append(icon);
-    const name = node('span'); name.append(node('span', system?.hostname || 'Unknown machine', 'machine-title'), node('span', `${hw?.model_name || 'Mac'} · ${primaryAddress(s)}`, 'machine-meta'));
-    button.append(glyph, name);
+    const isOnline = online(machine), presence = dot(isOnline);
+    presence.classList.add('machine-presence');
+    presence.title = isOnline ? `Online · Last report ${age(machine.received_at)}` : `No recent report · Last seen ${age(machine.received_at)}`;
+    presence.setAttribute('role', 'img');
+    presence.setAttribute('aria-label', presence.title);
+    const version = system?.os_version ? `macOS ${system.os_version}${system.os_extra ? ` ${system.os_extra}` : ''}` : 'macOS unavailable';
+    const name = node('span');
+    name.append(
+      node('span', system?.hostname || 'Unknown machine', 'machine-title'),
+      node('span', `${hw?.model_name || 'Mac'} · ${version}`, 'machine-meta'),
+      node('span', primaryAddress(s), 'machine-address'),
+    );
+    button.append(presence, name);
     button.addEventListener('click', () => { selectedID = s.device_id; render(); });
     first.append(button);
-    const status = node('span', null, 'row-status'); status.append(dot(online(machine)), document.createTextNode(online(machine) ? 'Online' : 'No recent report'));
-    const statusCell = node('td'); statusCell.append(status);
-    tr.append(first, cpuCell(s, hw), memoryCell(s, hw), storageCell(s.storage), node('td', system?.os_version || 'Unavailable'), statusCell);
+    tr.append(first, cpuCell(s, hw), memoryCell(s, hw), storageCell(s.storage));
     rows.append(tr);
     if (focusedDevice === s.device_id) button.focus({preventScroll: true});
   }
