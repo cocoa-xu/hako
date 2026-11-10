@@ -84,7 +84,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		flags := flag.NewFlagSet("agent", flag.ContinueOnError)
 		configPath := flags.String("config", "", "agent credential file")
-		interval := flags.Duration("interval", 30*time.Second, "delay between reports")
+		interval := flags.Duration("interval", 2*time.Second, "sampling interval")
 		once := flags.Bool("once", false, "collect and send one report")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err

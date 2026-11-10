@@ -30,6 +30,7 @@ type Snapshot struct {
 	Memory        Section[Memory]      `json:"memory"`
 	Storage       Section[Storage]     `json:"storage"`
 	Network       Section[[]Interface] `json:"network"`
+	Traffic       Section[Traffic]     `json:"traffic"`
 	Security      Security             `json:"security"`
 	LLDP          Section[[]Neighbor]  `json:"lldp"`
 	SessionApps   Section[[]string]    `json:"session_apps"`
@@ -91,8 +92,24 @@ type Memory struct {
 
 // CPU describes activity on a 100%-per-logical-core scale.
 type CPU struct {
-	UsagePercent float64 `json:"usage_percent"`
-	LogicalCores int     `json:"logical_cores"`
+	UsagePercent  float64 `json:"usage_percent"`
+	LogicalCores  int     `json:"logical_cores"`
+	WindowSeconds float64 `json:"window_seconds,omitempty"`
+}
+
+// Traffic counts Ethernet and Wi-Fi bytes without virtual-interface duplication.
+type Traffic struct {
+	ReceivedBytes uint64       `json:"received_bytes"`
+	SentBytes     uint64       `json:"sent_bytes"`
+	Interfaces    []string     `json:"interfaces"`
+	Rate          *TrafficRate `json:"rate,omitempty"`
+}
+
+// TrafficRate is the average throughput over the measured sampling window.
+type TrafficRate struct {
+	ReceiveBytesPerSecond float64 `json:"receive_bytes_per_second"`
+	SendBytesPerSecond    float64 `json:"send_bytes_per_second"`
+	WindowSeconds         float64 `json:"window_seconds"`
 }
 
 type Storage struct {

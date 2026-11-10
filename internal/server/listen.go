@@ -57,7 +57,8 @@ func (s *Server) serve(ctx context.Context, listeners []net.Listener, hosts []st
 		}
 	}()
 	httpServer := &http.Server{
-		Handler: s.Handler(hosts...), ReadHeaderTimeout: 5 * time.Second,
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		Handler:     s.Handler(hosts...), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second,
 		IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10,
 	}

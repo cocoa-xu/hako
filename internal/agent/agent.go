@@ -48,7 +48,7 @@ type Agent struct {
 	collector          Collector
 	client             *http.Client
 	inventory          *report.Section[report.Hardware]
-	inventoryDelivered bool
+	deliveredInventory *report.Section[report.Hardware]
 }
 
 func New(config Config, collector Collector) (*Agent, error) {
@@ -61,15 +61,24 @@ func New(config Config, collector Collector) (*Agent, error) {
 	}}, nil
 }
 
-func (a *Agent) Step(ctx context.Context) error {
+func (a *Agent) collect(ctx context.Context) report.Snapshot {
 	if a.inventory == nil || a.inventory.Status != "ok" {
 		inventory := a.collector.Inventory(ctx)
 		a.inventory = &inventory
-		a.inventoryDelivered = false
 	}
 	snapshot := a.collector.Sample(ctx, a.config.DeviceID)
-	if !a.inventoryDelivered {
-		snapshot.Hardware = a.inventory
+	snapshot.Hardware = a.inventory
+	return snapshot
+}
+
+func (a *Agent) Step(ctx context.Context) error {
+	return a.send(ctx, a.collect(ctx))
+}
+
+func (a *Agent) send(ctx context.Context, snapshot report.Snapshot) error {
+	inventory := snapshot.Hardware
+	if inventory == a.deliveredInventory {
+		snapshot.Hardware = nil
 	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
@@ -88,13 +97,13 @@ func (a *Agent) Step(ctx context.Context) error {
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode == http.StatusConflict {
-		a.inventoryDelivered = false
+		a.deliveredInventory = nil
 		return fmt.Errorf("receiver requested the cached startup inventory")
 	}
 	if response.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("receiver returned HTTP %d", response.StatusCode)
 	}
-	a.inventoryDelivered = true
+	a.deliveredInventory = inventory
 	return nil
 }
 
@@ -102,16 +111,45 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	if interval < time.Second {
 		return fmt.Errorf("report interval must be at least one second")
 	}
-	for {
-		if err := a.Step(ctx); err != nil && ctx.Err() == nil {
-			slog.Warn("report failed; retrying at the next interval", "error", err)
+	ctx, cancel := context.WithCancel(ctx)
+	samples := make(chan report.Snapshot, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for ctx.Err() == nil {
+			snapshot := a.collect(ctx)
+			select {
+			case samples <- snapshot:
+			default:
+				// Keep only the latest sample while a receiver is slow or offline.
+				select {
+				case <-samples:
+				default:
+				}
+				select {
+				case samples <- snapshot:
+				case <-ctx.Done():
+					return
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
 		}
-		timer := time.NewTimer(interval)
+	}()
+	defer func() { cancel(); <-done }()
+	for {
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return nil
-		case <-timer.C:
+		case snapshot := <-samples:
+			if err := a.send(ctx, snapshot); err != nil && ctx.Err() == nil {
+				slog.Warn("report failed; retrying with the latest sample", "error", err)
+			}
 		}
 	}
 }

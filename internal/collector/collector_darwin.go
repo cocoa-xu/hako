@@ -19,8 +19,12 @@ import (
 )
 
 type Collector struct {
-	run   runner
-	agent report.Agent
+	run             runner
+	agent           report.Agent
+	cpuPrevious     *cpuObservation
+	trafficPrevious *trafficObservation
+	securityCache   report.Security
+	securityAt      time.Time
 }
 
 func New(version string) *Collector {
@@ -101,20 +105,17 @@ func (c *Collector) Sample(ctx context.Context, deviceID string) report.Snapshot
 	snapshot.Memory = section(c.memory(ctx))
 	snapshot.Storage = section(storage())
 	snapshot.Network = section(interfaces())
-	snapshot.Security = c.security(ctx)
+	snapshot.Traffic = section(c.traffic(ctx))
+	if c.securityAt.IsZero() || time.Since(c.securityAt) >= 30*time.Second {
+		c.securityCache = c.security(ctx)
+		c.securityAt = time.Now()
+	}
+	snapshot.Security = c.securityCache
 	snapshot.ReportedAt = time.Now().UTC()
 	return snapshot
 }
 
 var bootPattern = regexp.MustCompile(`\bsec\s*=\s*(\d+)`)
-
-func (c *Collector) cpu(ctx context.Context) (report.CPU, error) {
-	data, err := c.run(ctx, "/usr/bin/top", "-l", "2", "-s", "1", "-n", "0", "-F", "-R")
-	if err != nil {
-		return report.CPU{}, err
-	}
-	return parseCPU(data, runtime.NumCPU())
-}
 
 func (c *Collector) system(ctx context.Context) (report.System, error) {
 	var system report.System

@@ -33,9 +33,10 @@ type Machine struct {
 }
 
 type Server struct {
-	directory string
-	mu        sync.Mutex
-	machines  map[string]Machine
+	directory   string
+	mu          sync.Mutex
+	machines    map[string]Machine
+	subscribers map[chan struct{}]struct{}
 }
 
 func validID(id string) bool { return len(id) == 32 && strings.Trim(id, "0123456789abcdef") == "" }
@@ -73,7 +74,7 @@ func New(directory string) (*Server, error) {
 	if err := Prepare(directory); err != nil {
 		return nil, err
 	}
-	s := &Server{directory: directory, machines: make(map[string]Machine)}
+	s := &Server{directory: directory, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{})}
 	entries, err := os.ReadDir(filepath.Join(directory, "machines"))
 	if err != nil {
 		return nil, err
@@ -107,6 +108,7 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/machines", s.list)
+	mux.HandleFunc("GET /api/events", s.events)
 	mux.HandleFunc("POST /api/reports", s.receive)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	web, _ := fs.Sub(assets, "web")
@@ -136,7 +138,12 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 	})
 }
 
-func (s *Server) list(w http.ResponseWriter, r *http.Request) {
+type fleet struct {
+	Machines   []Machine `json:"machines"`
+	ServerTime time.Time `json:"server_time"`
+}
+
+func (s *Server) fleet() fleet {
 	s.mu.Lock()
 	machines := make([]Machine, 0, len(s.machines))
 	for _, machine := range s.machines {
@@ -144,11 +151,12 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	sort.Slice(machines, func(i, j int) bool { return machines[i].Snapshot.DeviceID < machines[j].Snapshot.DeviceID })
+	return fleet{machines, time.Now().UTC()}
+}
+
+func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(struct {
-		Machines   []Machine `json:"machines"`
-		ServerTime time.Time `json:"server_time"`
-	}{machines, time.Now().UTC()})
+	_ = json.NewEncoder(w).Encode(s.fleet())
 }
 
 func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +199,12 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.machines[snapshot.DeviceID] = machine
+	for subscriber := range s.subscribers {
+		select {
+		case subscriber <- struct{}{}:
+		default:
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
