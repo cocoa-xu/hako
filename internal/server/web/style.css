@@ -314,6 +314,32 @@ h1 {
   gap:8px;
 }
 
+.cpu-summary {
+  gap:4px;
+}
+
+.cpu-meter {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 8ch;
+  align-items:center;
+  gap:10px;
+  font-size:11px;
+  line-height:1.4;
+}
+
+.cpu-meter .cpu-usage {
+  text-align:right;
+}
+
+.cpu-meter .field-state {
+  grid-column:1/-1;
+}
+
+.cpu-model {
+  font-size:11px;
+  line-height:1.4;
+}
+
 .usage-values {
   font-size:11px;
   font-variant-numeric:tabular-nums;

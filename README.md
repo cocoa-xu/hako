@@ -139,8 +139,8 @@ section is displayed as unavailable rather than silently reusing an old value.
 - The CPU column shows physical core groups in E / P / S order (Efficiency,
   Performance, Super). Absent groups are omitted; unknown groups keep their
   system-provided names. Macs without group data show their physical core count
-  and, when different, logical thread count. Chip names remain in machine details
-  and the configuration tooltip.
+  and, when different, logical thread count. The CPU cell has three lines: usage
+  bar and percentage, chip model, then core configuration.
 - Its bar is scaled to total CPU capacity: 600% fills half the bar on a twelve-core
   Mac, whose maximum is 1200%. Missing samples show no bar.
 - Free pages are not presented as total available memory. The UI pairs memory

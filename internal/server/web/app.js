@@ -98,7 +98,7 @@ function cpuUsage(section) {
 }
 function cpuCell(snapshot, hardware) {
   const cell = node('td'), cpu = data(snapshot.cpu), value = cpuUsage(snapshot.cpu);
-  const summary = node('div', null, 'usage-summary');
+  const summary = node('div', null, 'usage-summary cpu-summary'), meter = node('div', null, 'cpu-meter');
   if (value.className === 'cpu-usage') {
     const bar = node('div', null, 'bar');
     bar.append(barPiece(cpu.usage_percent / (cpu.logical_cores * 100), 'active'));
@@ -109,12 +109,12 @@ function cpuCell(snapshot, hardware) {
     bar.setAttribute('aria-valuenow', String(cpu.usage_percent));
     bar.setAttribute('aria-valuetext', `${cpu.usage_percent.toFixed(1)}% of ${cpu.logical_cores * 100}% total capacity`);
     bar.title = value.title;
-    summary.append(bar);
+    meter.append(bar);
   }
-  const values = node('span', null, 'usage-values');
-  values.title = [hardware?.chip, ...(hardware?.core_groups || []).map(group => `${group.physical_cores} ${group.name}`)].filter(Boolean).join(' · ');
-  values.append(value, document.createTextNode(` · ${coreConfiguration(hardware)}`));
-  summary.append(values);
+  meter.append(value);
+  const configuration = node('span', coreConfiguration(hardware), 'usage-values');
+  configuration.title = (hardware?.core_groups || []).map(group => `${group.physical_cores} ${group.name}`).join(' · ');
+  summary.append(meter, node('span', hardware?.chip || 'Chip unavailable', 'cpu-model'), configuration);
   cell.append(summary);
   return cell;
 }
