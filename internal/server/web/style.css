@@ -88,6 +88,19 @@ button:focus-visible,a:focus-visible,input:focus-visible,summary:focus-visible {
   margin-left:auto;
   font-size:12px;
   color:var(--muted);
+  display:flex;
+  align-items:center;
+  gap:20px;
+}
+
+.environment a {
+  color:var(--green);
+  text-underline-offset:4px;
+  text-decoration-color:#bacaba;
+}
+
+.environment a:hover {
+  text-decoration-color:currentColor;
 }
 
 main {
@@ -753,7 +766,7 @@ h3 {
   .brand-kanji {
     display:none;
   }
-  .environment {
+  #workspace-label {
     display:none;
   }
   main {

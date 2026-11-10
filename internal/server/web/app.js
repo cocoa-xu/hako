@@ -5,6 +5,8 @@ let machines = [];
 let selectedID = null;
 let clockOffset = 0;
 let connected = false;
+const isDemo = new URLSearchParams(window.location.search).get('demo') === '1';
+let demoFleet = null;
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -100,7 +102,7 @@ function renderList() {
   const available = machines.filter(online).length;
   $('fleet-status').replaceChildren(dot(connected && available > 0), document.createTextNode(connected ? `${available} online · ${machines.length} total` : 'Receiver unavailable'));
   const newest = machines.reduce((latest, m) => Math.max(latest, new Date(m.received_at).getTime()), 0);
-  $('updated').textContent = newest ? `Last report ${age(newest)}` : 'Waiting for the first report';
+  $('updated').textContent = isDemo ? 'Sample data' : newest ? `Last report ${age(newest)}` : 'Waiting for the first report';
 }
 function metric(value, label) {
   const wrap = node('div'), parts = value.split(' '), number = node('div', parts[0], 'metric');
@@ -192,9 +194,15 @@ function renderDetail() {
 function render() { renderList(); renderDetail(); }
 async function refresh() {
   try {
-    const response = await fetch('/api/machines', {cache: 'no-store'});
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const result = await response.json();
+    let result;
+    if (isDemo) {
+      demoFleet ||= (await import('./demo.js')).demoFleet;
+      result = demoFleet();
+    } else {
+      const response = await fetch('/api/machines', {cache: 'no-store'});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      result = await response.json();
+    }
     machines = result.machines;
     clockOffset = new Date(result.server_time).getTime() - Date.now();
     if (!machines.some(m => m.snapshot.device_id === selectedID)) selectedID = machines[0]?.snapshot.device_id || null;
@@ -202,7 +210,7 @@ async function refresh() {
     render();
   } catch (error) {
     connected = false;
-    $('connection-error').textContent = 'The local receiver is unavailable. Showing the last received data.';
+    $('connection-error').textContent = isDemo ? 'The demo could not load. Refresh to try again.' : 'The local receiver is unavailable. Showing the last received data.';
     $('connection-error').hidden = false;
     render();
   } finally { window.setTimeout(refresh, 5000); }
@@ -212,4 +220,11 @@ $('show-all-interfaces').addEventListener('change', renderDetail);
 document.querySelectorAll('.detail-tabs a').forEach(link => link.addEventListener('click', () => {
   document.querySelectorAll('.detail-tabs a').forEach(other => other.classList.toggle('active', other === link));
 }));
+if (isDemo) {
+  document.title = 'Hako · Demo';
+  $('workspace-label').textContent = 'Demo workspace';
+  $('fleet-label').textContent = 'DEMO FLEET';
+  $('fleet-mode').textContent = 'Back to live';
+  $('fleet-mode').href = '/';
+}
 refresh();

@@ -42,6 +42,20 @@ repeated `--listen` flags directly:
   --listen 127.0.0.1:8787 --listen 192.0.2.10:8787
 ```
 
+### Demo fleet
+
+Open `/?demo=1` on the running dashboard, or select **View demo**, to preview eight
+sample Mac minis. The demo includes different chips and capacities, memory
+pressure, low available storage, missing observations, and stale reports. Search,
+machine selection, and all detail sections use the same UI as the live fleet.
+Select **Back to live** to return.
+
+Demo data is generated in the browser and never submitted to the receiver or
+saved in the live inventory. Sample identifiers and documentation-only IP
+addresses are fictional. The live agent continues reporting independently.
+
+### Listener and collection options
+
 Wildcard binds are rejected. All requested addresses must bind successfully
 before serving, and requests still require an allowed Host and same-origin
 browser access. Agent credentials remain required for submitting reports.
