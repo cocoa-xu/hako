@@ -1,0 +1,4 @@
+* text=auto eol=lf
+/.local export-ignore
+/bin export-ignore
+/dist export-ignore

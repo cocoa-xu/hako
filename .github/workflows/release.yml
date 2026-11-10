@@ -1,0 +1,74 @@
+name: Draft release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, such as v0.1.0
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: hako-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Validate tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: .go-version
+      - name: Validate source
+        run: |
+          make test vet audit
+          node --check internal/server/web/app.js
+      - name: Prepare signing keychain
+        env:
+          SIGN_CERTIFICATE_BASE64: ${{ secrets.SIGN_CERTIFICATE_BASE64 }}
+          SIGN_CERTIFICATE_PASSWORD: ${{ secrets.SIGN_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          signing_keychain="$RUNNER_TEMP/hako-signing.keychain-db"
+          printf '%s' "$SIGN_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/hako-signing.p12"
+          printf '%s' "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/hako-notary.p8"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$signing_keychain"
+          security set-keychain-settings -lut 21600 "$signing_keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$signing_keychain"
+          security import "$RUNNER_TEMP/hako-signing.p12" -P "$SIGN_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$signing_keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$signing_keychain"
+          security list-keychains -d user -s "$signing_keychain" login.keychain-db
+          xcrun notarytool store-credentials hako-release --key "$RUNNER_TEMP/hako-notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$signing_keychain"
+          rm "$RUNNER_TEMP/hako-signing.p12" "$RUNNER_TEMP/hako-notary.p8"
+      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+        with:
+          version: v2.20.0
+          args: release --clean --draft --parallelism 2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ inputs.tag }}
+          SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
+          NOTARY_PROFILE: hako-release
+          NOTARY_KEYCHAIN: ${{ runner.temp }}/hako-signing.keychain-db
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/hako-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/hako-signing.p12" "$RUNNER_TEMP/hako-notary.p8"

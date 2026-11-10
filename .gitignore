@@ -1,3 +1,12 @@
 /bin/
 /.local/
 .DS_Store
+/dist/
+*.db
+*.db-wal
+*.db-shm
+*.key
+*.p12
+*.p8
+*.pem
+/coverage.out

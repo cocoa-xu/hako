@@ -141,8 +141,8 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		Label      string `json:"label"`
 		TTLSeconds int64  `json:"ttl_seconds"`
 	}
-	if decodeBody(w, r, &request) != nil || len(request.Label) > 80 || request.TTLSeconds < 60 || request.TTLSeconds > int64(maxEnrollmentTTL.Seconds()) {
-		http.Error(w, "Use a label of at most 80 bytes and a lifetime of 60 to 86400 seconds.", http.StatusBadRequest)
+	if decodeBody(w, r, &request) != nil || !validDisplayName(request.Label) || request.TTLSeconds < 60 || request.TTLSeconds > int64(maxEnrollmentTTL.Seconds()) {
+		http.Error(w, "Use a label of at most 80 characters without control characters and a lifetime of 60 to 86400 seconds.", http.StatusBadRequest)
 		return
 	}
 	key := randomSecret(32)
@@ -206,8 +206,8 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid registration.", http.StatusBadRequest)
 		return
 	}
-	key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if len(key) != 64 {
+	key, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !bearer || len(key) != 64 {
 		http.Error(w, "Invalid enrollment key.", http.StatusUnauthorized)
 		return
 	}
@@ -285,7 +285,7 @@ func (s *Server) renameMachine(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		DisplayName string `json:"display_name"`
 	}
-	if decodeBody(w, r, &request) != nil || !utf8.ValidString(request.DisplayName) || utf8.RuneCountInString(request.DisplayName) > 80 || strings.ContainsFunc(request.DisplayName, unicode.IsControl) {
+	if decodeBody(w, r, &request) != nil || !validDisplayName(request.DisplayName) {
 		http.Error(w, "Use at most 80 characters without control characters.", http.StatusBadRequest)
 		return
 	}
@@ -307,4 +307,8 @@ func (s *Server) renameMachine(w http.ResponseWriter, r *http.Request) {
 	s.registry = next
 	s.notifyLocked()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func validDisplayName(name string) bool {
+	return utf8.ValidString(name) && utf8.RuneCountInString(name) <= 80 && !strings.ContainsFunc(name, unicode.IsControl)
 }

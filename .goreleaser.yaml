@@ -1,0 +1,57 @@
+version: 2
+project_name: hako
+before:
+  hooks:
+    - sh scripts/release-preflight.sh {{ .IsSnapshot }}
+builds:
+  - id: macos
+    main: ./cmd/hako
+    binary: hako
+    goos: [darwin]
+    goarch: [arm64, amd64]
+    env:
+      - CGO_ENABLED=1
+      - MACOSX_DEPLOYMENT_TARGET=13.0
+      - CGO_CFLAGS=-O2 -g -mmacosx-version-min=13.0
+      - CGO_LDFLAGS=-mmacosx-version-min=13.0
+    flags: [-trimpath, -buildvcs=false]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.buildDate={{ .Date }}
+    hooks:
+      post: sh scripts/sign-release.sh {{ .Path }} {{ .IsSnapshot }}
+  - id: linux
+    main: ./cmd/hako
+    binary: hako
+    goos: [linux]
+    goarch: [amd64, arm64]
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath, -buildvcs=false]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.buildDate={{ .Date }}
+archives:
+  - id: binaries
+    formats: [tar.gz]
+    name_template: hako_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    wrap_in_directory: true
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - docs/*.md
+      - licenses/*
+      - deploy/**/*
+      - scripts/install-worker.sh
+      - scripts/install-server.sh
+checksum:
+  name_template: SHA256SUMS
+snapshot:
+  version_template: 0.1.0-dev-{{ .ShortCommit }}
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude: ['^test:', '^chore:']
+release:
+  draft: true
+  prerelease: auto
+  name_template: Hako {{ .Tag }}

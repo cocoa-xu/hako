@@ -245,3 +245,26 @@ func TestProxyOriginSecureCookiesAndAdminRotation(t *testing.T) {
 		t.Fatal("old admin key accepted after rotation")
 	}
 }
+
+func TestEnrollmentNamesAndBearerScheme(t *testing.T) {
+	s, _ := setup(t)
+	for _, name := range []string{strings.Repeat("箱", 81), "Mac\nName", "Mac\x00Name"} {
+		response := requestAPI(t, s, "POST", "/api/enrollments", s.adminKey, map[string]any{"label": name, "ttl_seconds": 900})
+		if response.Code != 400 {
+			t.Fatal("invalid enrollment name accepted")
+		}
+	}
+	response := requestAPI(t, s, "POST", "/api/enrollments", s.adminKey, map[string]any{"label": strings.Repeat("箱", 80), "ttl_seconds": 900})
+	if response.Code != 201 {
+		t.Fatal("valid Unicode name rejected")
+	}
+	key, _ := issueKey(t, s)
+	body, _ := json.Marshal(map[string]string{"device_id": identity.New(), "token_hash": hashSecret(randomSecret(32))})
+	request := httptest.NewRequest("POST", "http://127.0.0.1:8787/api/enroll", bytes.NewReader(body))
+	request.Header.Set("Authorization", key)
+	result := httptest.NewRecorder()
+	s.Handler().ServeHTTP(result, request)
+	if result.Code != 401 {
+		t.Fatal("missing Bearer scheme accepted")
+	}
+}
