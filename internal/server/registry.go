@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"hako/internal/agent"
+	"hako/internal/identity"
+	"unicode"
+	"unicode/utf8"
 )
 
 const maxEnrollmentTTL = 24 * time.Hour
@@ -29,9 +32,10 @@ type enrollment struct {
 }
 
 type credential struct {
-	TokenHash string     `json:"token_hash"`
-	CreatedAt time.Time  `json:"created_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	DisplayName string     `json:"display_name,omitempty"`
+	TokenHash   string     `json:"token_hash"`
+	CreatedAt   time.Time  `json:"created_at"`
+	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 }
 
 type registry struct {
@@ -54,7 +58,7 @@ func hashSecret(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Server) loadRegistry() error {
+func (s *Server) loadLegacyRegistry() error {
 	s.registry = registry{Enrollments: map[string]enrollment{}, Devices: map[string]credential{}, Sessions: map[string]time.Time{}}
 	data, err := os.ReadFile(filepath.Join(s.directory, "registry.json"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -74,9 +78,9 @@ func (s *Server) loadRegistry() error {
 			if json.Unmarshal(data, &config) != nil || config.Validate() != nil {
 				return fmt.Errorf("invalid legacy device credential")
 			}
-			s.registry.Devices[config.DeviceID] = credential{TokenHash: hashSecret(config.Token), CreatedAt: time.Now().UTC()}
+			s.registry.Devices[identity.Normalize(config.DeviceID)] = credential{TokenHash: hashSecret(config.Token), CreatedAt: time.Now().UTC()}
 		}
-		return s.saveRegistry(s.registry)
+		return nil
 	}
 	if err != nil {
 		return err
@@ -90,11 +94,18 @@ func (s *Server) loadRegistry() error {
 	if s.registry.Enrollments == nil || s.registry.Devices == nil {
 		return fmt.Errorf("incomplete device registry")
 	}
+	for id, device := range s.registry.Devices {
+		normalized := identity.Normalize(id)
+		if normalized != id {
+			delete(s.registry.Devices, id)
+			s.registry.Devices[normalized] = device
+		}
+	}
+	for hash, item := range s.registry.Enrollments {
+		item.DeviceID = identity.Normalize(item.DeviceID)
+		s.registry.Enrollments[hash] = item
+	}
 	return nil
-}
-
-func (s *Server) saveRegistry(value registry) error {
-	return writeJSON(filepath.Join(s.directory, "registry.json"), value)
 }
 
 func (s *Server) copyRegistry() registry {
@@ -228,7 +239,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	next := s.copyRegistry()
 	item.DeviceID = request.DeviceID
 	next.Enrollments[hash] = item
-	next.Devices[request.DeviceID] = credential{TokenHash: request.TokenHash, CreatedAt: time.Now().UTC()}
+	next.Devices[request.DeviceID] = credential{TokenHash: request.TokenHash, CreatedAt: time.Now().UTC(), DisplayName: item.Label}
 	if err := s.saveRegistry(next); err != nil {
 		http.Error(w, "Could not register device.", 500)
 		return
@@ -257,7 +268,6 @@ func (s *Server) revokeMachine(w http.ResponseWriter, r *http.Request) {
 	s.registry = next
 	delete(s.machines, id)
 	// The tombstone also prevents loading an old snapshot after a crash.
-	_ = os.Remove(filepath.Join(s.directory, "machines", id+".json"))
 	s.notifyLocked()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -269,4 +279,32 @@ func (s *Server) notifyLocked() {
 		default:
 		}
 	}
+}
+
+func (s *Server) renameMachine(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		DisplayName string `json:"display_name"`
+	}
+	if decodeBody(w, r, &request) != nil || !utf8.ValidString(request.DisplayName) || utf8.RuneCountInString(request.DisplayName) > 80 || strings.ContainsFunc(request.DisplayName, unicode.IsControl) {
+		http.Error(w, "Use at most 80 characters without control characters.", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := r.PathValue("id")
+	device, exists := s.registry.Devices[id]
+	if !exists || device.RevokedAt != nil {
+		http.NotFound(w, r)
+		return
+	}
+	next := s.copyRegistry()
+	device.DisplayName = strings.TrimSpace(request.DisplayName)
+	next.Devices[id] = device
+	if err := s.saveRegistry(next); err != nil {
+		http.Error(w, "Could not save the display name.", 500)
+		return
+	}
+	s.registry = next
+	s.notifyLocked()
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -63,9 +63,9 @@ function primaryAddress(snapshot) {
 }
 function matchingMachines() {
   const query = $('search').value.toLowerCase().trim();
-  return machines.filter(({snapshot: s}) => {
+  return machines.filter(({snapshot: s, display_name}) => {
     const system = data(s.system), hw = data(s.hardware);
-    return [system?.hostname, system?.os_version, hw?.model_name, hw?.chip, ...(data(s.network) || []).flatMap(i => i.addresses)].join(' ').toLowerCase().includes(query);
+    return [display_name, system?.hostname, system?.os_version, hw?.model_name, hw?.chip, ...(data(s.network) || []).flatMap(i => i.addresses)].join(' ').toLowerCase().includes(query);
   });
 }
 function coreConfiguration(hardware) {
@@ -174,7 +174,7 @@ function renderList() {
     const version = system?.os_version ? `macOS ${system.os_version}${system.os_extra ? ` ${system.os_extra}` : ''}` : 'macOS unavailable';
     const name = node('span');
     name.append(
-      node('span', system?.hostname || 'Unknown machine', 'machine-title'),
+      node('span', machine.display_name || system?.hostname || 'Unknown machine', 'machine-title'),
       node('span', `${hw?.model_name || 'Mac'} · ${version}`, 'machine-meta'),
       node('span', primaryAddress(s), 'machine-address'),
     );
@@ -328,7 +328,7 @@ function renderDetail() {
   const machine = machines.find(m => m.snapshot.device_id === selectedID);
   if (!machine) { if ($('detail').open) $('detail').close(); return; }
   const s = machine.snapshot, hw = data(s.hardware), system = data(s.system);
-  $('detail-name').textContent = system?.hostname || 'Unknown machine';
+  $('detail-name').textContent = machine.display_name || system?.hostname || 'Unknown machine';
   $('detail-subtitle').textContent = [hw?.model_name, hw?.chip, hw?.memory_bytes ? bytes(hw.memory_bytes) : null].filter(Boolean).join(' · ');
   const isOnline = online(machine);
   $('detail-status').className = `status-pill${isOnline ? '' : ' stale'}`;
@@ -337,6 +337,7 @@ function renderDetail() {
   $('detail-connection-error').hidden = connected;
   renderMemory(s, hw); renderStorage(s);
   clearFields('system-fields', system ? [
+    ['Hostname', system.hostname, true],
     ['macOS', `${system.os_version}${system.os_extra ? ` ${system.os_extra}` : ''} (${system.os_build})`],
     ['Uptime', uptime(system.uptime_seconds)], ['CPU usage', cpuUsage(s.cpu)], ['Load average', system.load_average.map(v => v.toFixed(2)).join(' / ') + '  (1 / 5 / 15 min)'],
     ['Console user', system.console_user || 'No active user'],
@@ -361,6 +362,8 @@ function renderDetail() {
 function openDetail(id) {
   if (!machines.some(machine => machine.snapshot.device_id === id)) return;
   selectedID = id;
+  $('machine-display-name').value = machines.find(machine => machine.snapshot.device_id === id).display_name || '';
+  $('machine-action-error').hidden = true;
   render();
   document.body.classList.add('drawer-open');
   $('detail').showModal();
@@ -509,7 +512,7 @@ $('copy-enrollment-key').addEventListener('click', async () => {
 });
 $('remove-machine').addEventListener('click', async () => {
   const machine = machines.find(item => item.snapshot.device_id === selectedID);
-  if (!machine || !window.confirm(`Remove ${data(machine.snapshot.system)?.hostname || 'this machine'}? Its credentials will be revoked. A new enrollment key is required to join again.`)) return;
+  if (!machine || !window.confirm(`Remove ${machine.display_name || data(machine.snapshot.system)?.hostname || 'this machine'}? Its credentials will be revoked. A new enrollment key is required to join again.`)) return;
   $('remove-machine').disabled = true; $('machine-action-error').hidden = true;
   try { await api(`/api/machines/${encodeURIComponent(selectedID)}`, 'DELETE'); if ($('detail').open) $('detail').close(); }
   catch (error) { showFormError('machine-action-error', error); }
@@ -521,3 +524,11 @@ async function initialize() {
 }
 window.setInterval(() => { if (machines.length) render(); }, 2000);
 initialize();
+
+$('rename-machine-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = event.submitter; button.disabled = true; $('machine-action-error').hidden = true;
+  try { await api(`/api/machines/${encodeURIComponent(selectedID)}`, 'PATCH', {display_name: $('machine-display-name').value}); }
+  catch (error) { showFormError('machine-action-error', error); }
+  finally { button.disabled = false; }
+});

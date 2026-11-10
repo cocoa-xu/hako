@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"hako/internal/identity"
 	"hako/internal/report"
 )
 
@@ -37,7 +38,7 @@ func (c Config) Validate() error {
 	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
 		return fmt.Errorf("server requires HTTPS, except for a loopback IP address")
 	}
-	if len(c.DeviceID) != 32 || strings.Trim(c.DeviceID, "0123456789abcdef") != "" || len(c.Token) < 32 {
+	if !identity.Valid(identity.Normalize(c.DeviceID)) || len(c.Token) < 32 {
 		return fmt.Errorf("invalid agent credentials")
 	}
 	return nil

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"hako/internal/identity"
 )
 
 // ReadSecret reads a private credential file without accepting shared permissions.
@@ -81,15 +83,11 @@ func Join(ctx context.Context, server, key, path string) error {
 		return err
 	} else {
 		config.Pending = true
-		var id [16]byte
 		var token [32]byte
-		if _, err := rand.Read(id[:]); err != nil {
-			return err
-		}
 		if _, err := rand.Read(token[:]); err != nil {
 			return err
 		}
-		config.DeviceID = hex.EncodeToString(id[:])
+		config.DeviceID = identity.New()
 		config.Token = hex.EncodeToString(token[:])
 	}
 	if err := config.Validate(); err != nil {

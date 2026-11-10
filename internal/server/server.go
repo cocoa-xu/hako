@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/subtle"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"hako/internal/agent"
+	"hako/internal/identity"
 	"hako/internal/report"
 )
 
@@ -26,11 +28,13 @@ import (
 var assets embed.FS
 
 type Machine struct {
-	Snapshot   report.Snapshot `json:"snapshot"`
-	ReceivedAt time.Time       `json:"received_at"`
+	DisplayName string          `json:"display_name,omitempty"`
+	Snapshot    report.Snapshot `json:"snapshot"`
+	ReceivedAt  time.Time       `json:"received_at"`
 }
 
 type Server struct {
+	db          *sql.DB
 	directory   string
 	mu          sync.Mutex
 	machines    map[string]Machine
@@ -40,7 +44,7 @@ type Server struct {
 	publicURL   *url.URL
 }
 
-func validID(id string) bool { return len(id) == 32 && strings.Trim(id, "0123456789abcdef") == "" }
+func validID(id string) bool { return identity.Valid(id) }
 
 func Prepare(directory string) error {
 	for _, path := range []string{directory, filepath.Join(directory, "agents"), filepath.Join(directory, "machines")} {
@@ -68,35 +72,25 @@ func NewWithOrigin(directory, origin string) (*Server, error) {
 		}
 		s.publicURL, _ = url.Parse(strings.TrimRight(origin, "/"))
 	}
+	if err := s.openDatabase(); err != nil {
+		return nil, err
+	}
+	success := false
+	defer func() {
+		if !success {
+			_ = s.Close()
+		}
+	}()
 	if err := s.loadRegistry(); err != nil {
 		return nil, err
 	}
 	if err := s.loadAdminKey(); err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(directory, "machines"))
-	if err != nil {
+	if err := s.loadMachines(); err != nil {
 		return nil, err
 	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(directory, "machines", entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-		var machine Machine
-		if err := json.Unmarshal(data, &machine); err != nil {
-			return nil, fmt.Errorf("load %s: %w", entry.Name(), err)
-		}
-		if !validID(machine.Snapshot.DeviceID) || machine.Snapshot.Hardware == nil {
-			return nil, fmt.Errorf("invalid persisted machine %s", entry.Name())
-		}
-		if credential, ok := s.registry.Devices[machine.Snapshot.DeviceID]; ok && credential.RevokedAt == nil {
-			s.machines[machine.Snapshot.DeviceID] = machine
-		}
-	}
+	success = true
 	return s, nil
 }
 
@@ -118,6 +112,7 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 	mux.HandleFunc("GET /api/enrollments", s.requireAdmin(s.listEnrollments))
 	mux.HandleFunc("DELETE /api/enrollments/{id}", s.requireAdmin(s.revokeEnrollment))
 	mux.HandleFunc("DELETE /api/machines/{id}", s.requireAdmin(s.revokeMachine))
+	mux.HandleFunc("PATCH /api/machines/{id}", s.requireAdmin(s.renameMachine))
 	mux.HandleFunc("POST /api/reports", s.receive)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	web, _ := fs.Sub(assets, "web")
@@ -160,7 +155,8 @@ type fleet struct {
 func (s *Server) fleet() fleet {
 	s.mu.Lock()
 	machines := make([]Machine, 0, len(s.machines))
-	for _, machine := range s.machines {
+	for id, machine := range s.machines {
+		machine.DisplayName = s.registry.Devices[id].DisplayName
 		machines = append(machines, machine)
 	}
 	s.mu.Unlock()
@@ -186,6 +182,7 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Expected one report.", http.StatusBadRequest)
 		return
 	}
+	snapshot.DeviceID = identity.Normalize(snapshot.DeviceID)
 	if !validID(snapshot.DeviceID) || snapshot.SchemaVersion != report.SchemaVersion || snapshot.ReportedAt.IsZero() {
 		http.Error(w, "Invalid report identity or version.", http.StatusBadRequest)
 		return
@@ -207,7 +204,7 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		snapshot.Hardware = previous.Snapshot.Hardware
 	}
 	machine := Machine{Snapshot: snapshot, ReceivedAt: time.Now().UTC()}
-	if err := writeJSON(filepath.Join(s.directory, "machines", snapshot.DeviceID+".json"), machine); err != nil {
+	if err := s.saveMachine(machine); err != nil {
 		http.Error(w, "Could not save report.", http.StatusInternalServerError)
 		return
 	}
@@ -216,26 +213,31 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func writeJSON(path string, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
+func (s *Server) loadLegacyMachines() error {
+	entries, err := os.ReadDir(filepath.Join(s.directory, "machines"))
 	if err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".hako-*")
-	if err != nil {
-		return err
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(s.directory, "machines", entry.Name()))
+		if err != nil {
+			return err
+		}
+		var machine Machine
+		if err := json.Unmarshal(data, &machine); err != nil {
+			return fmt.Errorf("load %s: %w", entry.Name(), err)
+		}
+		machine.Snapshot.DeviceID = identity.Normalize(machine.Snapshot.DeviceID)
+		if !validID(machine.Snapshot.DeviceID) || machine.Snapshot.Hardware == nil {
+			return fmt.Errorf("invalid persisted machine %s", entry.Name())
+		}
+		if credential, ok := s.registry.Devices[machine.Snapshot.DeviceID]; ok && credential.RevokedAt == nil {
+			s.machines[machine.Snapshot.DeviceID] = machine
+		}
 	}
-	defer os.Remove(file.Name())
-	if _, err := file.Write(append(data, '\n')); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
+
+	return nil
 }

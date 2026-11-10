@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hako/internal/agent"
+	"hako/internal/identity"
 	"hako/internal/report"
 )
 
@@ -50,18 +51,21 @@ func issueKey(t *testing.T, s *Server) (string, enrollment) {
 func TestEnrollmentIsSingleUseDurableAndRevocable(t *testing.T) {
 	s, _ := setup(t)
 	key, item := issueKey(t, s)
-	config := agent.Config{DeviceID: randomSecret(16), Token: randomSecret(32), Server: "http://127.0.0.1:8787"}
+	config := agent.Config{DeviceID: identity.New(), Token: randomSecret(32), Server: "http://127.0.0.1:8787"}
 	claim := map[string]string{"device_id": config.DeviceID, "token_hash": hashSecret(config.Token)}
 	for i := 0; i < 2; i++ {
 		if response := requestAPI(t, s, "POST", "/api/enroll", key, claim); response.Code != 204 {
 			t.Fatal(response.Code)
 		}
 	}
-	other := map[string]string{"device_id": randomSecret(16), "token_hash": hashSecret(randomSecret(32))}
+	other := map[string]string{"device_id": identity.New(), "token_hash": hashSecret(randomSecret(32))}
 	if response := requestAPI(t, s, "POST", "/api/enroll", key, other); response.Code != 409 {
 		t.Fatal("reused key accepted")
 	}
-	data, _ := os.ReadFile(filepath.Join(s.directory, "registry.json"))
+	data, err := os.ReadFile(filepath.Join(s.directory, "hako.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if bytes.Contains(data, []byte(key)) || bytes.Contains(data, []byte(config.Token)) {
 		t.Fatal("plaintext device or enrollment credential persisted")
 	}
@@ -111,7 +115,7 @@ func TestEnrollmentExpiryLimitsAndConcurrentClaim(t *testing.T) {
 	key, item := issueKey(t, s)
 	item.ExpiresAt = time.Now().Add(-time.Second)
 	s.registry.Enrollments[hashSecret(key)] = item
-	claim := map[string]string{"device_id": randomSecret(16), "token_hash": hashSecret(randomSecret(32))}
+	claim := map[string]string{"device_id": identity.New(), "token_hash": hashSecret(randomSecret(32))}
 	if response := requestAPI(t, s, "POST", "/api/enroll", key, claim); response.Code != 410 {
 		t.Fatal("expired key accepted")
 	}
@@ -122,7 +126,7 @@ func TestEnrollmentExpiryLimitsAndConcurrentClaim(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			response := requestAPI(t, s, "POST", "/api/enroll", key, map[string]string{"device_id": randomSecret(16), "token_hash": hashSecret(randomSecret(32))})
+			response := requestAPI(t, s, "POST", "/api/enroll", key, map[string]string{"device_id": identity.New(), "token_hash": hashSecret(randomSecret(32))})
 			results <- response.Code
 		}()
 	}

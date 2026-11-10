@@ -14,6 +14,7 @@ import (
 
 	"hako/internal/agent"
 	"hako/internal/control"
+	"hako/internal/identity"
 )
 
 func join(ctx context.Context, args []string) error {
@@ -86,7 +87,7 @@ func manage(ctx context.Context, command string, args []string) error {
 	case "invitations":
 		path = "/api/enrollments"
 	case "revoke":
-		if len(*id) != 32 || strings.Trim(*id, "0123456789abcdef") != "" {
+		if (!*invitation && !identity.Valid(*id)) || (*invitation && (len(*id) != 32 || strings.Trim(*id, "0123456789abcdef") != "")) {
 			return fmt.Errorf("provide a valid --id")
 		}
 		method = http.MethodDelete

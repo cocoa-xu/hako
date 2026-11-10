@@ -77,9 +77,11 @@ func run(ctx context.Context, args []string) error {
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		if _, err := server.New(*directory); err != nil {
+		s, err := server.New(*directory)
+		if err != nil {
 			return err
 		}
+		defer s.Close()
 		absolute, err := filepath.Abs(filepath.Join(*directory, "admin.key"))
 		if err != nil {
 			return err
@@ -134,6 +136,7 @@ func run(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
+		defer s.Close()
 		return s.ListenAndServe(ctx, addresses)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])

@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"syscall"
 	"time"
 )
 
@@ -56,6 +59,21 @@ func (s *Server) serve(ctx context.Context, listeners []net.Listener, hosts []st
 			_ = listener.Close()
 		}
 	}()
+	lock, err := os.OpenFile(filepath.Join(s.directory, "server.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return fmt.Errorf("another server is using this data directory")
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if err := s.loadRegistry(); err != nil {
+		return err
+	}
+	if err := s.loadMachines(); err != nil {
+		return err
+	}
 	httpServer := &http.Server{
 		BaseContext: func(net.Listener) context.Context { return ctx },
 		Handler:     s.Handler(hosts...), ReadHeaderTimeout: 5 * time.Second,

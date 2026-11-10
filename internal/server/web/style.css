@@ -1033,3 +1033,7 @@ h3 {
   .toolbar-actions>.muted { font-size:10px; }
   .sign-in { padding-top:64px; }
 }
+.machine-actions label { display:block; margin-bottom:8px; }
+.rename-row { display:flex; gap:10px; }
+.rename-row input { min-width:0; flex:1; padding:8px 10px; border:1px solid #d9e0d5; border-radius:5px; background:#fff; color:inherit; font:inherit; }
+#rename-machine-form { margin-bottom:24px; }

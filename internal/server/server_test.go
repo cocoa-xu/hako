@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"hako/internal/agent"
+	"hako/internal/identity"
 	"hako/internal/report"
 )
 
@@ -22,7 +23,8 @@ func setup(t *testing.T) (*Server, agent.Config) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := agent.Config{DeviceID: randomSecret(16), Token: randomSecret(32), Server: "http://127.0.0.1:8787"}
+	t.Cleanup(func() { _ = s.Close() })
+	config := agent.Config{DeviceID: identity.New(), Token: randomSecret(32), Server: "http://127.0.0.1:8787"}
 	key, _ := issueKey(t, s)
 	response := requestAPI(t, s, "POST", "/api/enroll", key, map[string]string{"device_id": config.DeviceID, "token_hash": hashSecret(config.Token)})
 	if response.Code != http.StatusNoContent {
@@ -67,7 +69,7 @@ func TestInventorySurvivesHeartbeatsAndReceiverRestart(t *testing.T) {
 	if machine.Snapshot.System.Data.Hostname != "renamed-mac" {
 		t.Fatal("dynamic update was lost")
 	}
-	info, err := os.Stat(filepath.Join(s.directory, "machines", config.DeviceID+".json"))
+	info, err := os.Stat(filepath.Join(s.directory, "hako.db"))
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("snapshot must be private", err)
 	}
