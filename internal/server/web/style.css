@@ -257,7 +257,7 @@ h1 {
 
 .machine-button {
   display:flex;
-  align-items:flex-start;
+  align-items:center;
   gap:12px;
   border:0;
   background:none;
@@ -269,7 +269,6 @@ h1 {
 .machine-presence {
   width:7px;
   height:7px;
-  margin-top:6px;
   border:1px solid transparent;
 }
 
