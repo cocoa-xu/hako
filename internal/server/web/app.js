@@ -114,7 +114,44 @@ function cpuCell(snapshot, hardware) {
   meter.append(value);
   const configuration = node('span', coreConfiguration(hardware), 'usage-values');
   configuration.title = (hardware?.core_groups || []).map(group => `${group.physical_cores} ${group.name}`).join(' · ');
-  summary.append(meter, node('span', hardware?.chip || 'Chip unavailable', 'cpu-model'), configuration);
+  const description = node('span', null, 'cpu-description');
+  description.append(node('span', hardware?.chip || 'Chip unavailable', 'cpu-model'), document.createTextNode(' · '), configuration);
+  summary.append(meter, description);
+  cell.append(summary);
+  return cell;
+}
+function transferBytes(value) {
+  if (!Number.isFinite(value) || value < 0) return 'Unavailable';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let index = 0;
+  while (value >= 1000 && index < units.length - 1) { value /= 1000; index++; }
+  return `${index === 0 ? Math.round(value) : value.toFixed(1)} ${units[index]}`;
+}
+function recentTraffic(machine) {
+  return connected && Date.now() + clockOffset - new Date(machine.snapshot.traffic?.observed_at) < 10000;
+}
+function trafficPair(received, sent, suffix, className) {
+  const row = node('div', null, className);
+  for (const [arrow, name, value] of [['↓', 'Download', received], ['↑', 'Upload', sent]]) {
+    const text = `${transferBytes(value)}${suffix}`;
+    const part = node('span', `${arrow} ${text}`);
+    part.setAttribute('aria-label', `${name}: ${text}`);
+    row.append(part);
+  }
+  return row;
+}
+function networkCell(machine) {
+  const cell = node('td'), traffic = data(machine.snapshot.traffic);
+  if (!traffic) { cell.append(stateLabel(machine.snapshot.traffic)); return cell; }
+  const summary = node('div', null, 'network-summary');
+  if (traffic.rate && recentTraffic(machine)) {
+    summary.append(trafficPair(traffic.rate.receive_bytes_per_second, traffic.rate.send_bytes_per_second, '/s', 'network-rate'));
+    summary.title = `Average over the last ${traffic.rate.window_seconds.toFixed(1)} seconds. `;
+  } else {
+    summary.append(node('span', recentTraffic(machine) ? 'Measuring speed…' : 'No recent sample', 'field-state'));
+  }
+  summary.append(trafficPair(traffic.received_bytes, traffic.sent_bytes, '', 'network-total'));
+  summary.title += 'Download / upload totals since boot on Ethernet and Wi-Fi. Interface resets can reset these counters.';
   cell.append(summary);
   return cell;
 }
@@ -146,7 +183,7 @@ function renderList() {
     button.append(presence, name);
     button.addEventListener('click', () => openDetail(s.device_id));
     first.append(button);
-    tr.append(first, cpuCell(s, hw), memoryCell(s, hw), storageCell(s.storage));
+    tr.append(first, cpuCell(s, hw), memoryCell(s, hw), storageCell(s.storage), networkCell(machine));
     rows.append(tr);
     if (focusedDevice === s.device_id) button.focus({preventScroll: true});
   }
@@ -156,7 +193,7 @@ function renderList() {
   const available = machines.filter(online).length;
   $('fleet-status').replaceChildren(dot(connected && available > 0), document.createTextNode(connected ? `${available} online · ${machines.length} total` : 'Receiver unavailable'));
   const newest = machines.reduce((latest, m) => Math.max(latest, new Date(m.received_at).getTime()), 0);
-  $('updated').textContent = isDemo ? 'Sample data' : newest ? `Last report ${age(newest)}` : 'Waiting for the first report';
+  $('updated').textContent = isDemo ? 'Sample data · updates every 2s' : newest ? `Live · Last report ${age(newest)}` : 'Waiting for the first report';
 }
 function barPiece(fraction, className) {
   const piece = node('div', null, `bar-piece ${className}`);
@@ -217,7 +254,12 @@ function storageCell(section) {
   const free = Math.min(total, storage.free_bytes), used = total - free;
   const bar = node('div', null, 'bar');
   bar.append(barPiece(used / total, 'used'));
-  cell.append(usageSummary(used, free, bar, 'Startup data volume; free is the filesystem-reported free space.'));
+  const summary = usageSummary(used, free, bar, 'Startup data volume; free is the filesystem-reported free space.');
+  if (Number.isFinite(storage.available_bytes) && storage.available_bytes / total < .1) {
+    summary.classList.add(storage.available_bytes / total < .05 ? 'storage-critical' : 'storage-warning');
+    summary.title += ` Low storage: ${transferBytes(storage.available_bytes)} available.`;
+  }
+  cell.append(summary);
   return cell;
 }
 function renderMemory(s, hw) {
@@ -270,6 +312,20 @@ function renderNetwork(s) {
     box.append(item);
   }
 }
+function renderTraffic(machine) {
+  const box = $('traffic-content'), traffic = data(machine.snapshot.traffic);
+  box.replaceChildren();
+  if (!traffic) { box.append(stateLabel(machine.snapshot.traffic)); return; }
+  const fields = node('dl', null, 'fields');
+  const rate = recentTraffic(machine) ? traffic.rate : null;
+  field(fields, 'Download', rate ? `${transferBytes(rate.receive_bytes_per_second)}/s` : 'Awaiting sample');
+  field(fields, 'Upload', rate ? `${transferBytes(rate.send_bytes_per_second)}/s` : 'Awaiting sample');
+  field(fields, 'Downloaded', transferBytes(traffic.received_bytes));
+  field(fields, 'Uploaded', transferBytes(traffic.sent_bytes));
+  if (rate) field(fields, 'Sample window', `${rate.window_seconds.toFixed(2)} s`);
+  box.append(fields, node('p', 'Ethernet and Wi-Fi totals since boot. An interface reset can reset its counters.', 'section-description'));
+  box.append(node('p', `Included: ${traffic.interfaces.join(', ')}`, 'section-description'));
+}
 function renderDetail() {
   const machine = machines.find(m => m.snapshot.device_id === selectedID);
   if (!machine) { if ($('detail').open) $('detail').close(); return; }
@@ -292,7 +348,7 @@ function renderDetail() {
     ['Automatic login', data(s.security.auto_login) === null ? stateLabel(s.security.auto_login) : (s.security.auto_login.data || 'Off')],
     ['Activation Lock at startup', hw?.activation_lock === 'enabled' ? 'On' : hw?.activation_lock === 'disabled' ? 'Off' : 'Unavailable'],
   ]);
-  renderNetwork(s);
+  renderNetwork(s); renderTraffic(machine);
   $('device-model').textContent = hw?.model_id || '';
   $('inventory-time').textContent = s.hardware?.observed_at ? `Inventory from ${displayTime(s.hardware.observed_at)}` : 'Inventory unavailable';
   clearFields('hardware-fields', hw ? [
@@ -323,27 +379,24 @@ function selectDetailTab(id) {
   $('detail-scroll').scrollTop = 0;
 }
 function render() { renderList(); renderDetail(); }
-async function refresh() {
+function receiveFleet(result) {
+  machines = result.machines;
+  clockOffset = new Date(result.server_time).getTime() - Date.now();
+  connected = true; $('connection-error').hidden = true;
+  render();
+}
+function disconnected() {
+  connected = false;
+  $('connection-error').textContent = isDemo ? 'The demo could not load. Refresh to try again.' : 'Connection interrupted. Reconnecting automatically; showing the last received data.';
+  $('connection-error').hidden = false;
+  render();
+}
+async function refreshDemo() {
   try {
-    let result;
-    if (isDemo) {
-      demoFleet ||= (await import('./demo.js')).demoFleet;
-      result = demoFleet();
-    } else {
-      const response = await fetch('/api/machines', {cache: 'no-store'});
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      result = await response.json();
-    }
-    machines = result.machines;
-    clockOffset = new Date(result.server_time).getTime() - Date.now();
-    connected = true; $('connection-error').hidden = true;
-    render();
-  } catch (error) {
-    connected = false;
-    $('connection-error').textContent = isDemo ? 'The demo could not load. Refresh to try again.' : 'The local receiver is unavailable. Showing the last received data.';
-    $('connection-error').hidden = false;
-    render();
-  } finally { window.setTimeout(refresh, 5000); }
+    demoFleet ||= (await import('./demo.js')).demoFleet;
+    receiveFleet(demoFleet());
+  } catch { disconnected(); }
+  finally { window.setTimeout(refreshDemo, 2000); }
 }
 $('search').addEventListener('input', render);
 $('show-all-interfaces').addEventListener('change', renderDetail);
@@ -380,4 +433,13 @@ if (isDemo) {
   $('fleet-mode').textContent = 'Back to live';
   $('fleet-mode').href = '/';
 }
-refresh();
+if (isDemo) {
+  refreshDemo();
+} else {
+  const events = new EventSource('/api/events');
+  events.addEventListener('machines', event => {
+    try { receiveFleet(JSON.parse(event.data)); } catch { disconnected(); }
+  });
+  events.addEventListener('error', disconnected);
+  window.setInterval(() => { if (machines.length) render(); }, 2000);
+}

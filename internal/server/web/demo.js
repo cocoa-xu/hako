@@ -14,7 +14,7 @@ const configurations = [
 function sampleMachine(config, index, now) {
   const suffix = String(index + 1).padStart(2, '0');
   const bootedAt = previewStartedAt - config.uptime * 86400000;
-  const reportedAt = config.staleSeconds ? previewStartedAt - config.staleSeconds * 1000 : now - (index * 3 + 2) * 1000;
+  const reportedAt = config.staleSeconds ? previewStartedAt - config.staleSeconds * 1000 : now - index * 100;
   const timestamp = new Date(reportedAt).toISOString();
   const startup = new Date(bootedAt + 60000).toISOString();
   const ok = data => ({status: 'ok', observed_at: timestamp, data});
@@ -22,9 +22,15 @@ function sampleMachine(config, index, now) {
   const pressure = config.pressure || 'normal';
   const memory = config.memory * GiB;
   const compressed = pressure === 'critical' ? 0.28 : pressure === 'warning' ? 0.16 : 0.04;
-  const active = pressure === 'normal' ? 0.32 : 0.52;
+  const elapsed = config.staleSeconds ? 0 : Math.floor((now - previewStartedAt) / 2000) * 2;
+  const wave = Math.sin(elapsed / 6 + index);
+  const active = (pressure === 'normal' ? 0.32 : 0.52) + .015 * wave;
   const swap = pressure === 'critical' ? 6.2 : pressure === 'warning' ? 1.4 : 0;
   const cores = config.cores.reduce((sum, count) => sum + count, 0);
+  const down = [5200000, 84300000, 26400, 1200000, 880, 0, 42000, 1200][index];
+  const up = [1250000, 7200000, 3200, 48000000, 150, 0, 8100, 200][index];
+  const transferred = (base, seconds) => base * (seconds + 1.8 * (Math.cos(index) - Math.cos(seconds / 6 + index)));
+  const average = base => elapsed > 0 ? (transferred(base, elapsed) - transferred(base, elapsed - 2)) / 2 : base;
   return {
     received_at: timestamp,
     snapshot: {
@@ -50,7 +56,7 @@ function sampleMachine(config, index, now) {
         booted_at: new Date(bootedAt).toISOString(), uptime_seconds: Math.floor((reportedAt - bootedAt) / 1000),
         load_average: config.load, console_user: index === 4 ? 'demo' : '',
       }),
-      cpu: config.cpu === undefined ? unavailable('error', 'Sample CPU collection failure.') : ok({usage_percent: config.cpu, logical_cores: cores}),
+      cpu: config.cpu === undefined ? unavailable('error', 'Sample CPU collection failure.') : ok({usage_percent: config.cpu * (1 + .08 * wave), logical_cores: cores, window_seconds: 2}),
       memory: config.memoryUnavailable ? unavailable('error', 'Sample collection failure.') : ok({
         free_bytes: Math.round(memory * (1 - active - compressed - 0.15)),
         active_bytes: Math.round(memory * active), inactive_bytes: Math.round(memory * 0.04),
@@ -67,6 +73,12 @@ function sampleMachine(config, index, now) {
         {name: 'en1', mac: `02:00:00:00:01:${suffix}`, addresses: [], up: false, loopback: false},
         {name: 'lo0', addresses: ['127.0.0.1/8', '::1/128'], up: true, loopback: true},
       ]),
+      traffic: config.memoryUnavailable ? unavailable('error', 'Sample network collection failure.') : ok({
+        received_bytes: Math.round((index + 1) * 85.6e9 + transferred(down, elapsed)),
+        sent_bytes: Math.round((index + 1) * 12.4e9 + transferred(up, elapsed)),
+        interfaces: ['en0', 'en1'],
+        rate: {receive_bytes_per_second: average(down), send_bytes_per_second: average(up), window_seconds: 2},
+      }),
       security: {
         remote_login: config.unprivileged ? unavailable('permission_denied', 'Sample agent running without root.') : ok(index !== 6),
         filevault: ok(index !== 7), auto_login: ok(''),

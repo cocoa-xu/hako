@@ -108,7 +108,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,summary:focus-visible {
 }
 
 main {
-  max-width:1264px;
+  max-width:1440px;
   margin:0 auto;
   padding:54px 48px 0;
 }
@@ -312,14 +312,17 @@ h1 {
 
 .usage-summary {
   width:100%;
-  min-width:154px;
+  min-width:138px;
   max-width:240px;
   display:grid;
+  grid-template-rows:16px 16px;
+  align-items:center;
   gap:8px;
 }
 
 .cpu-summary {
-  gap:4px;
+  min-width:218px;
+  max-width:280px;
 }
 
 .cpu-meter {
@@ -339,9 +342,46 @@ h1 {
   grid-column:1/-1;
 }
 
-.cpu-model {
+.cpu-description {
   font-size:11px;
   line-height:1.4;
+  color:var(--muted);
+}
+
+.cpu-model {
+  color:#303a33;
+}
+
+.network-summary {
+  display:grid;
+  grid-template-rows:16px 16px;
+  align-items:center;
+  gap:8px;
+  min-width:174px;
+  font-size:11px;
+  font-variant-numeric:tabular-nums;
+}
+
+.network-rate,.network-total {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  column-gap:12px;
+}
+
+.network-total {
+  color:var(--muted);
+}
+
+.storage-warning .bar-piece.used {
+  background:#b49c68;
+}
+
+.storage-critical .bar-piece.used {
+  background:#b37b68;
+}
+
+.storage-warning .usage-values,.storage-critical .usage-values {
+  color:#9b5e43;
 }
 
 .usage-values {
@@ -815,7 +855,7 @@ h3 {
     padding-top:65px;
   }
   .topbar {
-    padding-inline:max(48px,calc((100vw - 1168px)/2));
+    padding-inline:max(48px,calc((100vw - 1344px)/2));
   }
 }
 
