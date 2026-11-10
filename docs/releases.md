@@ -22,6 +22,8 @@ Each archive contains the binary, installation scripts, service templates,
 documentation, and license notices. `SHA256SUMS` covers the archive bytes.
 Runtime data, credentials, development logs, and signing keys are excluded.
 
+See [validation notes](validation.md) for the checks actually performed.
+
 ## Local rehearsal
 
 ```sh

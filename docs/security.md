@@ -56,7 +56,7 @@ log. Keep the service behind HTTPS and normal host/network access controls.
 
 ## API summary
 
-JSON requests reject unknown fields and excess bodies. API errors use HTTP status
+Management requests reject unknown fields; request bodies have size limits. API errors use HTTP status
 codes and plain-text messages. Enrollment and worker tokens use `Authorization:
 Bearer TOKEN`. Administrator endpoints accept the admin bearer key or a session.
 
