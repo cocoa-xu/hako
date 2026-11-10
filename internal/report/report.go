@@ -26,6 +26,7 @@ type Snapshot struct {
 	Agent         Agent                `json:"agent"`
 	Hardware      *Section[Hardware]   `json:"hardware,omitempty"`
 	System        Section[System]      `json:"system"`
+	CPU           Section[CPU]         `json:"cpu"`
 	Memory        Section[Memory]      `json:"memory"`
 	Storage       Section[Storage]     `json:"storage"`
 	Network       Section[[]Interface] `json:"network"`
@@ -86,6 +87,12 @@ type Memory struct {
 	Pressure         string `json:"pressure"`
 	SwapTotalBytes   uint64 `json:"swap_total_bytes"`
 	SwapUsedBytes    uint64 `json:"swap_used_bytes"`
+}
+
+// CPU describes activity on a 100%-per-logical-core scale.
+type CPU struct {
+	UsagePercent float64 `json:"usage_percent"`
+	LogicalCores int     `json:"logical_cores"`
 }
 
 type Storage struct {

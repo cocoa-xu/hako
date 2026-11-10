@@ -1,14 +1,14 @@
 const GiB = 1024 ** 3;
 const previewStartedAt = Date.now();
 const configurations = [
-  {name: 'mini-build-01', chip: 'M4 Pro', cores: [8, 4], memory: 64, disk: 926, available: 612, uptime: 12, load: [4.82, 3.16, 2.91]},
-  {name: 'mini-build-02', chip: 'M4 Pro', cores: [8, 4], memory: 48, disk: 926, available: 284, uptime: 8, load: [9.24, 8.12, 6.47], pressure: 'warning'},
-  {name: 'mini-runner-01', chip: 'M4', cores: [4, 6], memory: 24, disk: 460, available: 186, uptime: 21, load: [1.42, 1.08, 0.94]},
-  {name: 'mini-runner-02', chip: 'M2 Pro', cores: [8, 4], memory: 16, disk: 460, available: 92, uptime: 6, load: [10.21, 9.38, 7.82], pressure: 'critical'},
-  {name: 'mini-lab-01', chip: 'M2', cores: [4, 4], memory: 16, disk: 228, available: 8.6, uptime: 3, load: [0.48, 0.62, 0.51]},
+  {name: 'mini-build-01', chip: 'M6', cores: [4, 6, 2], cpu: 486.2, memory: 64, disk: 926, available: 612, uptime: 12, load: [4.82, 3.16, 2.91]},
+  {name: 'mini-build-02', chip: 'M4 Pro', cores: [8, 4], cpu: 812.5, memory: 48, disk: 926, available: 284, uptime: 8, load: [9.24, 8.12, 6.47], pressure: 'warning'},
+  {name: 'mini-runner-01', chip: 'M4', cores: [4, 6], cpu: 142.8, memory: 24, disk: 460, available: 186, uptime: 21, load: [1.42, 1.08, 0.94]},
+  {name: 'mini-runner-02', chip: 'M2 Pro', cores: [8, 4], cpu: 1021.4, memory: 16, disk: 460, available: 92, uptime: 6, load: [10.21, 9.38, 7.82], pressure: 'critical'},
+  {name: 'mini-lab-01', chip: 'M2', cores: [4, 4], cpu: 48.6, memory: 16, disk: 228, available: 8.6, uptime: 3, load: [0.48, 0.62, 0.51]},
   {name: 'mini-lab-02', chip: 'M1', cores: [4, 4], memory: 8, disk: 228, available: 104, uptime: 2, load: [0.72, 0.58, 0.41], unprivileged: true, memoryUnavailable: true},
-  {name: 'mini-spare-01', chip: 'M4', cores: [4, 6], memory: 16, disk: 228, available: 192, uptime: 5, load: [0.12, 0.18, 0.14], staleSeconds: 42 * 60},
-  {name: 'mini-archive-01', chip: 'M1', cores: [4, 4], memory: 16, disk: 460, available: 312, uptime: 37, load: [0.21, 0.31, 0.26], staleSeconds: 26 * 3600},
+  {name: 'mini-spare-01', chip: 'M4', cores: [4, 6], cpu: 12.4, memory: 16, disk: 228, available: 192, uptime: 5, load: [0.12, 0.18, 0.14], staleSeconds: 42 * 60},
+  {name: 'mini-archive-01', chip: 'M1', cores: [4, 4], cpu: 21.1, memory: 16, disk: 460, available: 312, uptime: 37, load: [0.21, 0.31, 0.26], staleSeconds: 26 * 3600},
 ];
 
 function sampleMachine(config, index, now) {
@@ -37,7 +37,7 @@ function sampleMachine(config, index, now) {
           model_name: 'Mac mini', model_id: `DEMO-${config.chip.replaceAll(' ', '-')}`,
           model_number: 'Sample configuration', chip: `Apple ${config.chip}`, architecture: 'arm64',
           physical_cores: cores, logical_cores: cores,
-          core_groups: config.cores.map((count, i) => ({name: i ? 'Efficiency' : 'Performance', physical_cores: count, logical_cores: count})),
+          core_groups: config.cores.map((count, i) => ({name: ['Performance', 'Efficiency', 'Super'][i], physical_cores: count, logical_cores: count})),
           memory_bytes: memory, serial_number: `DEMO0000${suffix}`,
           hardware_uuid: `00000000-0000-4000-8000-0000000000${suffix}`,
           provisioning_id: `DEMO-DEVICE-${suffix}`,
@@ -50,6 +50,7 @@ function sampleMachine(config, index, now) {
         booted_at: new Date(bootedAt).toISOString(), uptime_seconds: Math.floor((reportedAt - bootedAt) / 1000),
         load_average: config.load, console_user: index === 4 ? 'demo' : '',
       }),
+      cpu: config.cpu === undefined ? unavailable('error', 'Sample CPU collection failure.') : ok({usage_percent: config.cpu, logical_cores: cores}),
       memory: config.memoryUnavailable ? unavailable('error', 'Sample collection failure.') : ok({
         free_bytes: Math.round(memory * (1 - active - compressed - 0.15)),
         active_bytes: Math.round(memory * active), inactive_bytes: Math.round(memory * 0.04),

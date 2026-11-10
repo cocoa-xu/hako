@@ -97,6 +97,7 @@ func (c *Collector) Sample(ctx context.Context, deviceID string) report.Snapshot
 		SessionApps: report.Unavailable[[]string]("unsupported", "A user-session collector is not implemented yet."),
 	}
 	snapshot.System = section(c.system(ctx))
+	snapshot.CPU = section(c.cpu(ctx))
 	snapshot.Memory = section(c.memory(ctx))
 	snapshot.Storage = section(storage())
 	snapshot.Network = section(interfaces())
@@ -106,6 +107,14 @@ func (c *Collector) Sample(ctx context.Context, deviceID string) report.Snapshot
 }
 
 var bootPattern = regexp.MustCompile(`\bsec\s*=\s*(\d+)`)
+
+func (c *Collector) cpu(ctx context.Context) (report.CPU, error) {
+	data, err := c.run(ctx, "/usr/bin/top", "-l", "2", "-s", "1", "-n", "0", "-F", "-R")
+	if err != nil {
+		return report.CPU{}, err
+	}
+	return parseCPU(data, runtime.NumCPU())
+}
 
 func (c *Collector) system(ctx context.Context) (report.System, error) {
 	var system report.System

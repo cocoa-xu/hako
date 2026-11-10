@@ -102,6 +102,7 @@ not grant root access; the root collection mode still uses `sudo`.
 | Device identity | Serial number, hardware UUID, provisioning UDID |
 | Platform | Firmware, OS loader, Activation Lock as reported by System Information |
 | System | Hostname, macOS version and build, Rapid Security Response suffix when present, boot time, uptime, 1/5/15-minute load averages, console user |
+| CPU | Sampled CPU usage with 100% per logical core, logical core count |
 | Memory | Free, active, inactive, speculative, wired and compressed pages in bytes; kernel memory pressure; swap total and usage |
 | Storage | Startup data volume path, total capacity, free bytes and available bytes |
 | Network | Every interface's name, MAC address, IP prefixes, administrative up flag and loopback flag |
@@ -130,6 +131,18 @@ section is displayed as unavailable rather than silently reusing an old value.
 - CPU groups use system-provided names, including systems with more than two
   groups. No fixed performance/efficiency split is assumed.
 - Load average is not CPU utilization.
+- CPU usage comes from the second `top` summary, with a one-second sampling
+  delay. The first sample is discarded. User and system CPU time are summed and
+  scaled by the logical core count, so one busy core is 100% and twelve fully
+  busy cores are 1200%. This is a short sample per report, not an average over the
+  reporting interval. Collection requires no root privileges.
+- The CPU column shows physical core groups in E / P / S order (Efficiency,
+  Performance, Super). Absent groups are omitted; unknown groups keep their
+  system-provided names. Macs without group data show their physical core count
+  and, when different, logical thread count. Chip names remain in machine details
+  and the configuration tooltip.
+- Its bar is scaled to total CPU capacity: 600% fills half the bar on a twelve-core
+  Mac, whose maximum is 1200%. Missing samples show no bar.
 - Free pages are not presented as total available memory. The UI pairs memory
   pressure with the underlying page counters and swap usage.
 - The fleet table shows a memory bar and used / free values in decimal GB.

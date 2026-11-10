@@ -70,6 +70,54 @@ function matchingMachines() {
     return [system?.hostname, hw?.model_name, hw?.chip, ...(data(s.network) || []).flatMap(i => i.addresses)].join(' ').toLowerCase().includes(query);
   });
 }
+function coreConfiguration(hardware) {
+  if (!hardware) return 'Core configuration unavailable';
+  const groups = (hardware.core_groups || []).filter(group => Number.isInteger(group.physical_cores) && group.physical_cores > 0);
+  const labels = new Map([['efficiency', 'E'], ['performance', 'P'], ['super', 'S']]);
+  const parts = [];
+  for (const [name, label] of labels) {
+    const count = groups.filter(group => group.name.toLowerCase() === name).reduce((sum, group) => sum + group.physical_cores, 0);
+    if (count) parts.push(`${count}${label}`);
+  }
+  for (const group of groups) {
+    if (!labels.has(group.name.toLowerCase())) parts.push(`${group.physical_cores} ${group.name}`);
+  }
+  if (parts.length) return parts.join(' / ');
+  if (!hardware.physical_cores) return 'Core configuration unavailable';
+  return hardware.logical_cores > hardware.physical_cores ? `${hardware.physical_cores}C / ${hardware.logical_cores}T` : `${hardware.physical_cores} cores`;
+}
+function cpuUsage(section) {
+  const cpu = data(section);
+  if (!cpu) return stateLabel(section);
+  if (!Number.isFinite(cpu.usage_percent) || cpu.usage_percent < 0 || !Number.isInteger(cpu.logical_cores) || cpu.logical_cores <= 0 || cpu.usage_percent > cpu.logical_cores * 100) {
+    return node('span', 'Unavailable', 'field-state');
+  }
+  const value = node('span', `${cpu.usage_percent.toFixed(1)}%`, 'cpu-usage');
+  value.title = `100% = one logical core. Total capacity: ${cpu.logical_cores * 100}%.`;
+  return value;
+}
+function cpuCell(snapshot, hardware) {
+  const cell = node('td'), cpu = data(snapshot.cpu), value = cpuUsage(snapshot.cpu);
+  const summary = node('div', null, 'usage-summary');
+  if (value.className === 'cpu-usage') {
+    const bar = node('div', null, 'bar');
+    bar.append(barPiece(cpu.usage_percent / (cpu.logical_cores * 100), 'active'));
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', 'CPU usage');
+    bar.setAttribute('aria-valuemin', '0');
+    bar.setAttribute('aria-valuemax', String(cpu.logical_cores * 100));
+    bar.setAttribute('aria-valuenow', String(cpu.usage_percent));
+    bar.setAttribute('aria-valuetext', `${cpu.usage_percent.toFixed(1)}% of ${cpu.logical_cores * 100}% total capacity`);
+    bar.title = value.title;
+    summary.append(bar);
+  }
+  const values = node('span', null, 'usage-values');
+  values.title = [hardware?.chip, ...(hardware?.core_groups || []).map(group => `${group.physical_cores} ${group.name}`)].filter(Boolean).join(' · ');
+  values.append(value, document.createTextNode(` · ${coreConfiguration(hardware)}`));
+  summary.append(values);
+  cell.append(summary);
+  return cell;
+}
 function renderList() {
   const filtered = matchingMachines();
   if (filtered.length && !filtered.some(m => m.snapshot.device_id === selectedID)) selectedID = filtered[0].snapshot.device_id;
@@ -89,7 +137,7 @@ function renderList() {
     first.append(button);
     const status = node('span', null, 'row-status'); status.append(dot(online(machine)), document.createTextNode(online(machine) ? 'Online' : 'No recent report'));
     const statusCell = node('td'); statusCell.append(status);
-    tr.append(first, node('td', hw?.chip || 'Unavailable'), memoryCell(s, hw), storageCell(s.storage), node('td', system?.os_version || 'Unavailable'), statusCell);
+    tr.append(first, cpuCell(s, hw), memoryCell(s, hw), storageCell(s.storage), node('td', system?.os_version || 'Unavailable'), statusCell);
     rows.append(tr);
     if (focusedDevice === s.device_id) button.focus({preventScroll: true});
   }
@@ -225,7 +273,7 @@ function renderDetail() {
   renderMemory(s, hw); renderStorage(s);
   clearFields('system-fields', system ? [
     ['macOS', `${system.os_version}${system.os_extra ? ` ${system.os_extra}` : ''} (${system.os_build})`],
-    ['Uptime', uptime(system.uptime_seconds)], ['Load average', system.load_average.map(v => v.toFixed(2)).join(' / ') + '  (1 / 5 / 15 min)'],
+    ['Uptime', uptime(system.uptime_seconds)], ['CPU usage', cpuUsage(s.cpu)], ['Load average', system.load_average.map(v => v.toFixed(2)).join(' / ') + '  (1 / 5 / 15 min)'],
     ['Console user', system.console_user || 'No active user'],
   ] : [['System status', stateLabel(s.system)]]);
   clearFields('security-fields', [

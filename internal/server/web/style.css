@@ -300,6 +300,10 @@ h1 {
   margin-top:5px;
 }
 
+.cpu-usage {
+  font-variant-numeric:tabular-nums;
+}
+
 .usage-summary {
   width:154px;
   display:grid;
