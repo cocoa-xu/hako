@@ -23,6 +23,7 @@ func join(ctx context.Context, args []string) error {
 	config := flags.String("config", "", "worker configuration destination")
 	keyFile := flags.String("key-file", "", "private file containing the enrollment key")
 	keyStdin := flags.Bool("key-stdin", false, "read the enrollment key from standard input")
+	accessFile := flags.String("access-service-token-file", "", "private JSON file containing a Cloudflare Access service token")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -44,10 +45,43 @@ func join(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := agent.Join(ctx, *server, key, *config); err != nil {
+	var access *agent.AccessServiceToken
+	if *accessFile != "" {
+		access, err = agent.ReadAccessServiceToken(*accessFile)
+		if err != nil {
+			return err
+		}
+	}
+	if err := agent.JoinWithAccess(ctx, *server, key, *config, access); err != nil {
 		return err
 	}
 	fmt.Println("Worker enrolled. Configuration saved to", *config)
+	return nil
+}
+
+func configureAccess(args []string) error {
+	flags := flag.NewFlagSet("configure-access", flag.ContinueOnError)
+	config := flags.String("config", "", "existing worker configuration")
+	tokenFile := flags.String("service-token-file", "", "private JSON file containing a Cloudflare Access service token")
+	remove := flags.Bool("remove", false, "remove Cloudflare Access credentials")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *config == "" || (*tokenFile != "") == *remove {
+		return fmt.Errorf("provide --config and exactly one of --service-token-file or --remove")
+	}
+	var token *agent.AccessServiceToken
+	var err error
+	if *tokenFile != "" {
+		token, err = agent.ReadAccessServiceToken(*tokenFile)
+		if err != nil {
+			return err
+		}
+	}
+	if err := agent.ConfigureAccess(*config, token); err != nil {
+		return err
+	}
+	fmt.Println("Access configuration updated. Restart the worker to apply it.")
 	return nil
 }
 

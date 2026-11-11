@@ -19,14 +19,15 @@ import (
 )
 
 type Config struct {
-	DeviceID string `json:"device_id"`
-	Server   string `json:"server"`
-	Token    string `json:"token"`
-	Pending  bool   `json:"pending,omitempty"`
+	DeviceID         string              `json:"device_id"`
+	Server           string              `json:"server"`
+	Token            string              `json:"token"`
+	Pending          bool                `json:"pending,omitempty"`
+	CloudflareAccess *AccessServiceToken `json:"cloudflare_access,omitempty"`
 }
 
-// ErrUnauthorized means the worker must be enrolled again by an administrator.
-var ErrUnauthorized = errors.New("worker credential was rejected or revoked")
+// ErrUnauthorized means Hako or its access proxy rejected worker authentication.
+var ErrUnauthorized = errors.New("worker authentication was rejected; check Hako credentials and Cloudflare Access")
 
 func (c Config) Validate() error {
 	u, err := url.Parse(c.Server)
@@ -41,7 +42,7 @@ func (c Config) Validate() error {
 	if !identity.Valid(identity.Normalize(c.DeviceID)) || len(c.Token) < 32 {
 		return fmt.Errorf("invalid agent credentials")
 	}
-	return nil
+	return c.CloudflareAccess.validate()
 }
 
 type Collector interface {
@@ -98,6 +99,7 @@ func (a *Agent) send(ctx context.Context, snapshot report.Snapshot) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+a.config.Token)
+	a.config.CloudflareAccess.Apply(req)
 	req.Header.Set("Content-Type", "application/json")
 	response, err := a.client.Do(req)
 	if err != nil {

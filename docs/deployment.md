@@ -14,6 +14,9 @@ header and disable response buffering for `/api/events`. Hako does not trust
 forwarded headers. The included `deploy/Caddyfile` is a minimal Caddy example;
 replace `hako.example.com` with your hostname and configure DNS before use.
 
+For Cloudflare Access, follow the [Access deployment guide](cloudflare.md) before
+enabling interactive login: workers need their own Service Token configuration.
+
 Download the archive for the server architecture and `SHA256SUMS` from the same
 release. Verify the selected archive with `shasum -a 256` (macOS) or `sha256sum`
 (Linux), comparing the complete digest with its entry in `SHA256SUMS`, then extract

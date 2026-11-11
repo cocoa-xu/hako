@@ -66,7 +66,7 @@ func TestRedirectDoesNotForwardCredentials(t *testing.T) {
 		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
 	}))
 	defer receiver.Close()
-	a, _ := New(Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: "0123456789abcdef0123456789abcdef", Server: receiver.URL}, &fakeCollector{})
+	a, _ := New(Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: "0123456789abcdef0123456789abcdef", Server: receiver.URL, CloudflareAccess: &AccessServiceToken{ClientID: "test.access", ClientSecret: "test-secret"}}, &fakeCollector{})
 	if err := a.Step(context.Background()); err == nil {
 		t.Fatal("redirect accepted")
 	}

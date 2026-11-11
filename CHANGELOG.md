@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Support per-worker Cloudflare Access Service Tokens for enrollment and reports.
+- Add Access credential rotation without replacing an existing worker identity.
+- Document Cloudflare Access policies and nginx event-stream proxying.
+
 ## 0.1.0 - 2026-11-11
 
 - Add a Mac fleet dashboard with live CPU, memory, storage, and network metrics.

@@ -44,11 +44,11 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: hako <serve|join|agent|invite|invitations|revoke|machines|init|import|inspect|version> [options]")
+		return fmt.Errorf("usage: hako <serve|join|agent|configure-access|invite|invitations|revoke|machines|init|import|inspect|version> [options]")
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
-		fmt.Println("Usage: hako <serve|join|agent|invite|invitations|revoke|machines|init|import|inspect|version> [options]\nUse hako <command> --help for command options.")
+		fmt.Println("Usage: hako <serve|join|agent|configure-access|invite|invitations|revoke|machines|init|import|inspect|version> [options]\nUse hako <command> --help for command options.")
 		return nil
 	case "version":
 		fmt.Printf("hako %s (%s, %s)\n", version, commit, buildDate)
@@ -69,6 +69,8 @@ func run(ctx context.Context, args []string) error {
 		return encoder.Encode(snapshot)
 	case "join", "enroll":
 		return join(ctx, args[1:])
+	case "configure-access":
+		return configureAccess(args[1:])
 	case "invite", "invitations", "revoke", "machines":
 		return manage(ctx, args[0], args[1:])
 	case "init", "import":
@@ -133,7 +135,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		err = a.Run(ctx, *interval)
 		if errors.Is(err, agent.ErrUnauthorized) {
-			slog.Error("Worker stopped: credential revoked or rejected. Enroll again before restarting.")
+			slog.Error("Worker stopped: authentication rejected. Check Hako enrollment and Cloudflare Access credentials before restarting.")
 			return nil
 		}
 		return err

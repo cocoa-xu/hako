@@ -14,9 +14,13 @@ import (
 func TestJoinRetainsPendingIdentityAfterLostAcknowledgement(t *testing.T) {
 	var claims []map[string]string
 	key := strings.Repeat("b", 64)
+	access := &AccessServiceToken{ClientID: "test-client.access", ClientSecret: "test-secret"}
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/enroll" || r.Header.Get("Authorization") != "Bearer "+key {
 			t.Error("incorrect registration request")
+		}
+		if r.Header.Get("CF-Access-Client-Id") != access.ClientID || r.Header.Get("CF-Access-Client-Secret") != access.ClientSecret {
+			t.Error("registration lost Access credentials")
 		}
 		var claim map[string]string
 		if err := json.NewDecoder(r.Body).Decode(&claim); err != nil {
@@ -31,7 +35,7 @@ func TestJoinRetainsPendingIdentityAfterLostAcknowledgement(t *testing.T) {
 	}))
 	defer receiver.Close()
 	path := filepath.Join(t.TempDir(), "worker.json")
-	if err := Join(context.Background(), receiver.URL, key, path); err == nil {
+	if err := JoinWithAccess(context.Background(), receiver.URL, key, path, access); err == nil {
 		t.Fatal("failed registration reported success")
 	}
 	text, err := ReadSecret(path)

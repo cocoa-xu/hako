@@ -4,13 +4,15 @@ umask 077
 package_dir=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 server_url=
 key_file=
+access_file=
 staging_root=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --server) server_url=${2:?Missing server URL}; shift 2 ;;
     --key-file) key_file=${2:?Missing key file}; shift 2 ;;
+    --access-service-token-file) access_file=${2:?Missing Access service token file}; shift 2 ;;
     --staging-root) staging_root=${2:?Missing staging directory}; shift 2 ;;
-    --help) printf 'Usage: %s [--server https://host --key-file enrollment.key] [--staging-root directory]\n' "$0"; exit 0 ;;
+    --help) printf 'Usage: %s [--server https://host --key-file enrollment.key] [--access-service-token-file access.json] [--staging-root directory]\n' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
@@ -41,7 +43,11 @@ install -m 0644 "$package_dir/deploy/macos/moe.uwucocoa.hako.worker.plist" "$pli
 if [ ! -f "$log_dir/worker.log" ]; then install -m 0600 /dev/null "$log_dir/worker.log"; fi
 if [ -n "$staging_root" ]; then printf 'Staged worker files in %s\n' "$staging_root"; exit 0; fi
 if [ ! -f "$config" ] || [ -n "$server_url" ]; then
-  "$binary_dir/hako" join --server "$server_url" --config "$config" --key-file "$key_file"
+  set -- "$binary_dir/hako" join --server "$server_url" --config "$config" --key-file "$key_file"
+  if [ -n "$access_file" ]; then set -- "$@" --access-service-token-file "$access_file"; fi
+  "$@"
+elif [ -n "$access_file" ]; then
+  "$binary_dir/hako" configure-access --config "$config" --service-token-file "$access_file"
 fi
 launchctl bootout system/moe.uwucocoa.hako.worker 2>/dev/null || true
 launchctl enable system/moe.uwucocoa.hako.worker

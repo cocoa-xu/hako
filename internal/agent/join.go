@@ -60,6 +60,11 @@ func SavePrivate(path string, data []byte) error {
 
 // Join consumes one enrollment key and stores a stable installation identity.
 func Join(ctx context.Context, server, key, path string) error {
+	return JoinWithAccess(ctx, server, key, path, nil)
+}
+
+// JoinWithAccess enrolls a worker through an optional Cloudflare Access policy.
+func JoinWithAccess(ctx context.Context, server, key, path string, access *AccessServiceToken) error {
 	if len(key) != 64 || strings.Trim(key, "0123456789abcdef") != "" {
 		return fmt.Errorf("invalid enrollment key")
 	}
@@ -90,6 +95,9 @@ func Join(ctx context.Context, server, key, path string) error {
 		config.DeviceID = identity.New()
 		config.Token = hex.EncodeToString(token[:])
 	}
+	if access != nil {
+		config.CloudflareAccess = access
+	}
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -110,6 +118,7 @@ func Join(ctx context.Context, server, key, path string) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
+	config.CloudflareAccess.Apply(req)
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)
