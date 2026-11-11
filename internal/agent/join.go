@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"hako/internal/identity"
+	"github.com/cocoa-xu/hako/internal/identity"
 )
 
 // ReadSecret reads a private credential file without accepting shared permissions.

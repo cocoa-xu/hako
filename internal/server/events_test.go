@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 func readFleet(t *testing.T, scanner *bufio.Scanner) fleet {

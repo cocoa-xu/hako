@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 type cpuObservation struct {

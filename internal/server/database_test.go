@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"hako/internal/agent"
-	"hako/internal/identity"
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/agent"
+	"github.com/cocoa-xu/hako/internal/identity"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 func TestLegacyMigrationPreservesIdentityAndDisplayNameAcrossRestart(t *testing.T) {

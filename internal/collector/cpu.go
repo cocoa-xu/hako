@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 var cpuPattern = regexp.MustCompile(`(?m)^CPU usage:\s*([0-9]+(?:\.[0-9]+)?)% user,\s*([0-9]+(?:\.[0-9]+)?)% sys,\s*([0-9]+(?:\.[0-9]+)?)% idle\s*$`)

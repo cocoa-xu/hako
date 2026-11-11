@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 func (c *Collector) traffic(ctx context.Context) (report.Traffic, error) {

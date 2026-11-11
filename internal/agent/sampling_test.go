@@ -9,7 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 type scheduledCollector struct {

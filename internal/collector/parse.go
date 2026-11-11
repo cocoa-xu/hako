@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 func parseHardware(data []byte) (report.Hardware, error) {

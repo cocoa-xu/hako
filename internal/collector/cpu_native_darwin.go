@@ -22,7 +22,7 @@ import (
 	"runtime"
 	"time"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 func (c *Collector) cpu(_ context.Context) (report.CPU, error) {

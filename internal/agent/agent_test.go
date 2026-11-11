@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 type fakeCollector struct{ inventories int }

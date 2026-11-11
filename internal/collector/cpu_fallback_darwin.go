@@ -6,7 +6,7 @@ import (
 	"context"
 	"runtime"
 
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 func (c *Collector) cpu(ctx context.Context) (report.CPU, error) {

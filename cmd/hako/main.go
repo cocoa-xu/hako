@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"hako/internal/agent"
-	"hako/internal/collector"
-	"hako/internal/server"
+	"github.com/cocoa-xu/hako/internal/agent"
+	"github.com/cocoa-xu/hako/internal/collector"
+	"github.com/cocoa-xu/hako/internal/server"
 )
 
 var version = "0.1.0-dev"

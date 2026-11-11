@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"hako/internal/agent"
-	"hako/internal/control"
-	"hako/internal/identity"
+	"github.com/cocoa-xu/hako/internal/agent"
+	"github.com/cocoa-xu/hako/internal/control"
+	"github.com/cocoa-xu/hako/internal/identity"
 )
 
 func join(ctx context.Context, args []string) error {

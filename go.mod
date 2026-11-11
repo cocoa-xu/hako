@@ -1,4 +1,4 @@
-module hako
+module github.com/cocoa-xu/hako
 
 go 1.27.0
 

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"hako/internal/identity"
-	"hako/internal/report"
+	"github.com/cocoa-xu/hako/internal/identity"
+	"github.com/cocoa-xu/hako/internal/report"
 )
 
 type Config struct {

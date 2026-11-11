@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"hako/internal/agent"
-	"hako/internal/identity"
+	"github.com/cocoa-xu/hako/internal/agent"
+	"github.com/cocoa-xu/hako/internal/identity"
 	"unicode"
 	"unicode/utf8"
 )

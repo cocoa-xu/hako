@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Hexadecimal validation alphabet and deterministic test fixture"
+regexTarget = "secret"
+regexes = ['''^0123456789abcdef(?:0123456789abcdef)?$''']

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"hako/internal/agent"
+	"github.com/cocoa-xu/hako/internal/agent"
 )
 
 // Call sends one request without following redirects or leaking its credential.
