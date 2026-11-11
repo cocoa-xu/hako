@@ -58,11 +58,11 @@ func hashSecret(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Server) loadLegacyRegistry() error {
+func (s *Server) loadLegacyRegistry(directory string) error {
 	s.registry = registry{Enrollments: map[string]enrollment{}, Devices: map[string]credential{}, Sessions: map[string]time.Time{}}
-	data, err := os.ReadFile(filepath.Join(s.directory, "registry.json"))
+	data, err := os.ReadFile(filepath.Join(directory, "registry.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		entries, err := os.ReadDir(filepath.Join(s.directory, "agents"))
+		entries, err := os.ReadDir(filepath.Join(directory, "agents"))
 		if err != nil {
 			return err
 		}
@@ -70,7 +70,7 @@ func (s *Server) loadLegacyRegistry() error {
 			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 				continue
 			}
-			data, err := os.ReadFile(filepath.Join(s.directory, "agents", entry.Name()))
+			data, err := os.ReadFile(filepath.Join(directory, "agents", entry.Name()))
 			if err != nil {
 				return err
 			}

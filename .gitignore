@@ -10,3 +10,11 @@
 *.p8
 *.pem
 /coverage.out
+
+/hako
+/database.url
+/server-data/
+/worker.json
+/private-export/
+*.dump
+*.backup

@@ -42,6 +42,7 @@ archives:
       - deploy/**/*
       - scripts/install-worker.sh
       - scripts/install-server.sh
+      - scripts/export-sqlite.py
 checksum:
   name_template: SHA256SUMS
 snapshot:

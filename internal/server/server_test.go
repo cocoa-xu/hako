@@ -19,7 +19,7 @@ import (
 func setup(t *testing.T) (*Server, agent.Config) {
 	t.Helper()
 	directory := t.TempDir()
-	s, err := New(directory)
+	s, err := New(directory, testDatabase(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,10 +58,7 @@ func TestInventorySurvivesHeartbeatsAndReceiverRestart(t *testing.T) {
 	if response := post(t, s, config, snapshot); response.Code != http.StatusNoContent {
 		t.Fatal(response.Code)
 	}
-	restarted, err := New(s.directory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	restarted := restartServer(t, s)
 	machine := restarted.machines[config.DeviceID]
 	if machine.Snapshot.Hardware.Data.ModelName != "Test Mac" || !machine.Snapshot.Hardware.ObservedAt.Equal(hardware.ObservedAt) {
 		t.Fatal("startup inventory changed")
@@ -69,9 +66,8 @@ func TestInventorySurvivesHeartbeatsAndReceiverRestart(t *testing.T) {
 	if machine.Snapshot.System.Data.Hostname != "renamed-mac" {
 		t.Fatal("dynamic update was lost")
 	}
-	info, err := os.Stat(filepath.Join(s.directory, "hako.db"))
-	if err != nil || info.Mode().Perm() != 0600 {
-		t.Fatal("snapshot must be private", err)
+	if _, err := os.Stat(filepath.Join(s.directory, "hako.db")); !os.IsNotExist(err) {
+		t.Fatal("receiver created a SQLite database")
 	}
 }
 

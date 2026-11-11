@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -62,17 +63,14 @@ func TestEnrollmentIsSingleUseDurableAndRevocable(t *testing.T) {
 	if response := requestAPI(t, s, "POST", "/api/enroll", key, other); response.Code != 409 {
 		t.Fatal("reused key accepted")
 	}
-	data, err := os.ReadFile(filepath.Join(s.directory, "hako.db"))
-	if err != nil {
-		t.Fatal(err)
+	var savedHash string
+	if err := s.db.QueryRowContext(context.Background(), "SELECT token_hash FROM devices WHERE id=$1", config.DeviceID).Scan(&savedHash); err != nil || savedHash != hashSecret(config.Token) {
+		t.Fatal("worker credential digest missing", err)
 	}
-	if bytes.Contains(data, []byte(key)) || bytes.Contains(data, []byte(config.Token)) {
-		t.Fatal("plaintext device or enrollment credential persisted")
+	if err := s.db.QueryRowContext(context.Background(), "SELECT key_hash FROM enrollments WHERE id=$1", item.ID).Scan(&savedHash); err != nil || savedHash != hashSecret(key) {
+		t.Fatal("enrollment credential digest missing", err)
 	}
-	restarted, err := New(s.directory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	restarted := restartServer(t, s)
 	if response := requestAPI(t, restarted, "POST", "/api/enroll", key, other); response.Code != 409 {
 		t.Fatal("key consumption lost on restart")
 	}
@@ -90,10 +88,7 @@ func TestEnrollmentIsSingleUseDurableAndRevocable(t *testing.T) {
 	if response := requestAPI(t, restarted, "POST", "/api/enroll", key, claim); response.Code != 409 {
 		t.Fatal("used key resurrected revoked worker")
 	}
-	restarted, err = New(s.directory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	restarted = restartServer(t, restarted)
 	if _, exists := restarted.machines[config.DeviceID]; exists {
 		t.Fatal("removed machine returned after restart")
 	}
@@ -192,10 +187,7 @@ func TestAdministratorBoundarySessionsAndLogout(t *testing.T) {
 	if response.Code != 401 {
 		t.Fatal("logged-out session replayed")
 	}
-	restarted, err := New(s.directory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	restarted := restartServer(t, s)
 	if restarted.authorized(request) {
 		t.Fatal("logout lost on restart")
 	}
@@ -203,10 +195,7 @@ func TestAdministratorBoundarySessionsAndLogout(t *testing.T) {
 
 func TestProxyOriginSecureCookiesAndAdminRotation(t *testing.T) {
 	s, _ := setup(t)
-	s, err := NewWithOrigin(s.directory, "https://hako.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s = restartServer(t, s, "https://hako.example.com")
 	request := httptest.NewRequest("POST", "http://hako.example.com/api/session", nil)
 	request.Header.Set("Origin", "https://hako.example.com")
 	request.Header.Set("Authorization", "Bearer "+s.adminKey)
@@ -233,10 +222,7 @@ func TestProxyOriginSecureCookiesAndAdminRotation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.directory, "admin.key"), []byte(strings.Repeat("a", 64)+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := New(s.directory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	restarted := restartServer(t, s)
 	if len(restarted.registry.Sessions) != 0 {
 		t.Fatal("admin key rotation preserved sessions")
 	}

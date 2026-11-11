@@ -44,11 +44,11 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: hako <serve|join|agent|invite|invitations|revoke|machines|init|inspect|version> [options]")
+		return fmt.Errorf("usage: hako <serve|join|agent|invite|invitations|revoke|machines|init|import|inspect|version> [options]")
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
-		fmt.Println("Usage: hako <serve|join|agent|invite|invitations|revoke|machines|init|inspect|version> [options]\nUse hako <command> --help for command options.")
+		fmt.Println("Usage: hako <serve|join|agent|invite|invitations|revoke|machines|init|import|inspect|version> [options]\nUse hako <command> --help for command options.")
 		return nil
 	case "version":
 		fmt.Printf("hako %s (%s, %s)\n", version, commit, buildDate)
@@ -71,17 +71,34 @@ func run(ctx context.Context, args []string) error {
 		return join(ctx, args[1:])
 	case "invite", "invitations", "revoke", "machines":
 		return manage(ctx, args[0], args[1:])
-	case "init":
-		flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	case "init", "import":
+		flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
+		databaseFile := flags.String("database-url-file", "", "private file containing the PostgreSQL connection URL")
+		importDirectory := flags.String("from-dir", "", "exported registry directory (import only)")
 		directory := flags.String("data-dir", ".local", "receiver state directory")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
-		s, err := server.New(*directory)
+		databaseURL, err := databaseConnection(*databaseFile)
+		if err != nil {
+			return err
+		}
+		s, err := server.New(*directory, databaseURL)
 		if err != nil {
 			return err
 		}
 		defer s.Close()
+		if args[0] == "import" {
+			if *importDirectory == "" {
+				return fmt.Errorf("provide --from-dir")
+			}
+			if err := s.ImportLegacy(*importDirectory); err != nil {
+				return err
+			}
+			fmt.Println("Imported device identities and state into PostgreSQL.")
+		} else if *importDirectory != "" {
+			return fmt.Errorf("--from-dir requires the import command")
+		}
 		absolute, err := filepath.Abs(filepath.Join(*directory, "admin.key"))
 		if err != nil {
 			return err
@@ -122,6 +139,7 @@ func run(ctx context.Context, args []string) error {
 		return err
 	case "serve":
 		flags := flag.NewFlagSet("serve", flag.ContinueOnError)
+		databaseFile := flags.String("database-url-file", "", "private file containing the PostgreSQL connection URL")
 		directory := flags.String("data-dir", ".local", "receiver state directory")
 		publicURL := flags.String("public-url", "", "external HTTPS origin when behind a reverse proxy")
 		var addresses listenAddresses
@@ -132,7 +150,11 @@ func run(ctx context.Context, args []string) error {
 		if len(addresses) == 0 {
 			addresses = append(addresses, "127.0.0.1:8787")
 		}
-		s, err := server.NewWithOrigin(*directory, *publicURL)
+		databaseURL, err := databaseConnection(*databaseFile)
+		if err != nil {
+			return err
+		}
+		s, err := server.NewWithOrigin(*directory, databaseURL, *publicURL)
 		if err != nil {
 			return err
 		}
@@ -141,4 +163,11 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func databaseConnection(path string) (string, error) {
+	if path != "" {
+		return agent.ReadSecret(path)
+	}
+	return os.Getenv("HAKO_DATABASE_URL"), nil
 }

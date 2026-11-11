@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"database/sql"
 	"embed"
@@ -34,7 +35,9 @@ type Machine struct {
 }
 
 type Server struct {
-	db          *sql.DB
+	db          *sql.Conn
+	pool        *sql.DB
+	databaseURL string
 	directory   string
 	mu          sync.Mutex
 	machines    map[string]Machine
@@ -55,16 +58,16 @@ func Prepare(directory string) error {
 	return nil
 }
 
-func New(directory string) (*Server, error) {
-	return NewWithOrigin(directory, "")
+func New(directory, databaseURL string) (*Server, error) {
+	return NewWithOrigin(directory, databaseURL, "")
 }
 
 // NewWithOrigin configures the external HTTPS origin used by a reverse proxy.
-func NewWithOrigin(directory, origin string) (*Server, error) {
+func NewWithOrigin(directory, databaseURL, origin string) (*Server, error) {
 	if err := Prepare(directory); err != nil {
 		return nil, err
 	}
-	s := &Server{directory: directory, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{})}
+	s := &Server{directory: directory, databaseURL: databaseURL, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{})}
 	if origin != "" {
 		config := agent.Config{Server: origin, DeviceID: strings.Repeat("0", 32), Token: strings.Repeat("0", 64)}
 		if err := config.Validate(); err != nil {
@@ -72,7 +75,7 @@ func NewWithOrigin(directory, origin string) (*Server, error) {
 		}
 		s.publicURL, _ = url.Parse(strings.TrimRight(origin, "/"))
 	}
-	if err := s.openDatabase(); err != nil {
+	if err := s.openDatabase(databaseURL); err != nil {
 		return nil, err
 	}
 	success := false
@@ -114,7 +117,15 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 	mux.HandleFunc("DELETE /api/machines/{id}", s.requireAdmin(s.revokeMachine))
 	mux.HandleFunc("PATCH /api/machines/{id}", s.requireAdmin(s.renameMachine))
 	mux.HandleFunc("POST /api/reports", s.receive)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := s.db.PingContext(ctx); err != nil {
+			http.Error(w, "Database unavailable.", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -213,8 +224,8 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) loadLegacyMachines() error {
-	entries, err := os.ReadDir(filepath.Join(s.directory, "machines"))
+func (s *Server) loadLegacyMachines(directory string) error {
+	entries, err := os.ReadDir(filepath.Join(directory, "machines"))
 	if err != nil {
 		return err
 	}
@@ -222,7 +233,7 @@ func (s *Server) loadLegacyMachines() error {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(s.directory, "machines", entry.Name()))
+		data, err := os.ReadFile(filepath.Join(directory, "machines", entry.Name()))
 		if err != nil {
 			return err
 		}

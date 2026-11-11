@@ -3,9 +3,10 @@
 ## Choose a server
 
 Use a small Linux host with systemd, or a Mac running a user LaunchAgent. The
-server runs as an ordinary user and needs no root privileges. SQLite is embedded;
-there is no separate database service to install. Keep its data directory on a
-local filesystem. Run exactly one server process per data directory.
+server runs as an ordinary user and needs no root privileges. Prepare a dedicated
+PostgreSQL 18 database and a private connection file before installing Hako;
+see [PostgreSQL setup](postgresql.md). Run exactly one receiver per database.
+The server installer configures Hako, not the PostgreSQL service.
 
 For remote workers, put an HTTPS reverse proxy in front of the loopback listener.
 Set `--public-url` to the exact browser-facing HTTPS origin. Preserve the Host
@@ -21,14 +22,17 @@ it. Run the following commands from the extracted archive directory.
 ### Linux with systemd
 
 ```sh
-sudo ./scripts/install-server.sh --public-url https://hako.example.com
+sudo ./scripts/install-server.sh --public-url https://hako.example.com \
+  --database-url-file /absolute/path/to/database.url
 sudo systemctl status hako
 sudo journalctl -u hako
 ```
 
 The installer creates a dedicated `hako` user, installs the binary at
 `/usr/local/libexec/hako/hako`, stores configuration in `/etc/hako/server.env`,
-and keeps state in `/var/lib/hako` (0700). It starts a loopback listener at
+copies the private connection file to `/etc/hako/database.url` (0600, owned by
+`hako`), and keeps the administrator key in `/var/lib/hako` (0700). Fleet data
+lives in PostgreSQL. It starts a loopback listener at
 `127.0.0.1:8787`. Configure your HTTPS proxy separately.
 
 The administrator key is `/var/lib/hako/admin.key` (0600). Read it privately on
@@ -48,6 +52,7 @@ cp deploy/macos/moe.uwucocoa.hako.server.plist "$server_plist"
 plutil -replace ProgramArguments.0 -string "$HOME/.local/bin/hako" "$server_plist"
 plutil -replace ProgramArguments.3 -string "$server_data" "$server_plist"
 plutil -replace ProgramArguments.7 -string 'https://hako.example.com' "$server_plist"
+plutil -replace ProgramArguments.9 -string '/absolute/path/to/database.url' "$server_plist"
 plutil -replace StandardOutPath -string "$server_data/server.log" "$server_plist"
 plutil -replace StandardErrorPath -string "$server_data/server.log" "$server_plist"
 launchctl bootstrap "gui/$(id -u)" "$server_plist"
@@ -60,7 +65,8 @@ HTTPS separately; the supplied template listens on loopback only.
 ### Foreground or development server
 
 ```sh
-./hako serve --data-dir ./server-data --listen 127.0.0.1:8787
+./hako serve --data-dir ./server-data --database-url-file ./database.url \
+  --listen 127.0.0.1:8787
 ```
 
 For explicit LAN listeners, repeat `--listen` with each concrete `IP:port`.
@@ -139,7 +145,7 @@ CLI removal uses `hako revoke --id DEVICE_UUID --admin-key-file ...`; add
 
 Back up the server before an upgrade. Verify and extract the new release.
 On Linux, rerun `sudo ./scripts/install-server.sh` without arguments. It preserves
-`server.env` and the database. On each Mac worker, rerun
+`server.env`, `database.url`, and PostgreSQL data. On each Mac worker, rerun
 `sudo ./scripts/install-worker.sh` without enrollment arguments. It preserves
 the UUID and token and restarts the service with the new binary.
 
@@ -152,19 +158,9 @@ point old software at a database with an unknown newer schema.
 
 ## Back up and restore
 
-Stop the server, copy the entire private data directory to a secure backup, and
-restart it. Include `hako.db`, any `hako.db-wal` / `hako.db-shm` files that remain,
-and `admin.key`. Do not copy only a live `hako.db`: recent transactions can reside
-in the WAL. Keep backups private and encrypted when stored elsewhere.
-
-Restore while the server is stopped, preserve 0700 directory / 0600 file modes,
-and use the same service account. Restoring an old backup can also restore old
-credentials and sessions: revoke devices and rotate the administrator key as
-needed before reopening access.
-
-SQLite WAL requires a local filesystem; do not share it over NFS or SMB. See the
-[SQLite WAL documentation](https://sqlite.org/wal.html). PostgreSQL is not an
-implemented backend in this version.
+Use PostgreSQL's backup and restore tools, and back up the server's `admin.key`
+separately. Follow [the database recovery procedure](postgresql.md#back-up-and-restore).
+Copying the Hako data directory does not back up the fleet database.
 
 ## Stop or uninstall
 

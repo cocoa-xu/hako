@@ -22,6 +22,12 @@ fi
 mkdir -p "$data_dir"
 
 set -- "$binary" serve --data-dir "$data_dir" --listen 127.0.0.1:8787
+if [ -f "$data_dir/database.url" ]; then
+  set -- "$@" --database-url-file "$data_dir/database.url"
+elif [ -z "${HAKO_DATABASE_URL-}" ]; then
+  printf 'Start PostgreSQL with scripts/postgres-local.sh or set HAKO_DATABASE_URL.\n' >&2
+  exit 1
+fi
 if [ -f "$data_dir/listen-addresses" ]; then
   while IFS= read -r address || [ -n "$address" ]; do
     if [ -n "$address" ]; then set -- "$@" --listen "$address"; fi

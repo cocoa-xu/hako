@@ -9,7 +9,7 @@ prototype IDs migrate deterministically to UUIDs so their identity remains
 stable. Reinstalling with a new configuration creates a new identity.
 
 The server stores SHA-256 digests of worker tokens and enrollment keys, and
-persists key consumption and device creation in a single SQLite transaction.
+persists key consumption and device creation in a single PostgreSQL transaction.
 Workers save a pending identity before contacting the server. Repeating exactly
 the same claim after a lost response succeeds without consuming another identity;
 a different claim fails. An unused key expires after its chosen lifetime,
@@ -22,15 +22,16 @@ and single-use enrollment do not provide hardware attestation. Keep each
 The administrator key grants full fleet access. It is generated into `admin.key`
 with mode 0600, never printed at server startup, and is separate from enrollment
 and worker keys. Browser login exchanges it for a random HttpOnly, SameSite=Strict
-session cookie lasting 12 hours. Session digests persist in SQLite. Logout revokes
+session cookie lasting 12 hours. Session digests persist in PostgreSQL. Logout revokes
 the session. Configuring an HTTPS public origin also makes the cookie Secure.
 
 To rotate the administrator key, stop the server, remove `admin.key`, and restart.
 A new key is generated and existing sessions are invalidated. Worker credentials
 remain valid. Preserve a private backup if administrator access must be recovered.
 
-State directories use 0700; private files use 0600. The database is not encrypted
-at rest. Use appropriate host access controls and encrypted storage. Never commit
+Local state directories use 0700; private files use 0600. Database storage and
+backups follow the PostgreSQL host configuration. Use a dedicated database role,
+verified TLS for remote connections, and appropriate encrypted storage. Never commit
 runtime state, exports, logs, tokens, or signing material.
 
 ## Boundaries
@@ -46,8 +47,11 @@ runtime state, exports, logs, tokens, or signing material.
   literal loopback addresses. They use the system certificate trust store.
 - Removing a device persists a revocation tombstone and deletes its report in
   one transaction. A late or repeated old report cannot recreate it.
-- Only one receiver process may serve a data directory. The database uses WAL,
-  foreign keys, and synchronous FULL commits. Latest observations survive restart.
+- Only one receiver may own a PostgreSQL database. A session advisory lock is
+  held on the same connection used for all reads and writes. Losing that session
+  does not silently reconnect with stale cached credentials; the receiver exits
+  and its service manager can restart it. Foreign keys, transactions, and
+  synchronous commits protect persisted state. Latest observations survive restart.
 
 The receiver cannot ask workers to execute commands. Collection is read-only;
 root access is for observing restricted system information. This version has one

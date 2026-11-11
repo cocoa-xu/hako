@@ -7,7 +7,7 @@ build:
 	$(GO) build -trimpath -buildvcs=false -o bin/hako ./cmd/hako
 
 test:
-	$(GO) test -race ./...
+	GO="$(GO)" ./scripts/test.sh
 
 vet:
 	$(GO) vet ./...

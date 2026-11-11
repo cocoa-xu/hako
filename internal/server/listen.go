@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -59,20 +58,13 @@ func (s *Server) serve(ctx context.Context, listeners []net.Listener, hosts []st
 			_ = listener.Close()
 		}
 	}()
-	lock, err := os.OpenFile(filepath.Join(s.directory, "server.lock"), os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return fmt.Errorf("another server is using this data directory")
-	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	if err := s.loadRegistry(); err != nil {
-		return err
-	}
-	if err := s.loadMachines(); err != nil {
-		return err
+	if len(s.registry.Devices) == 0 {
+		if _, err := os.Stat(filepath.Join(s.directory, "hako.db")); err == nil {
+			var imported string
+			if err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='legacy_imported'").Scan(&imported); err != nil {
+				return fmt.Errorf("SQLite state found: export it and run hako import before starting the PostgreSQL receiver")
+			}
+		}
 	}
 	httpServer := &http.Server{
 		BaseContext: func(net.Listener) context.Context { return ctx },
@@ -86,15 +78,26 @@ func (s *Server) serve(ctx context.Context, listeners []net.Listener, hosts []st
 		go func() { results <- httpServer.Serve(listener) }()
 		slog.Info("Hako is listening", "url", "http://"+listener.Addr().String())
 	}
-	select {
-	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdown)
-	case err := <-results:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	databaseCheck := time.NewTicker(5 * time.Second)
+	defer databaseCheck.Stop()
+	for {
+		select {
+		case <-databaseCheck.C:
+			check, cancel := context.WithTimeout(ctx, 2*time.Second)
+			err := s.db.PingContext(check)
+			cancel()
+			if err != nil {
+				return fmt.Errorf("PostgreSQL connection lost; restart the receiver to reconnect safely")
+			}
+		case <-ctx.Done():
+			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return httpServer.Shutdown(shutdown)
+		case err := <-results:
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
 		}
-		return err
 	}
 }
