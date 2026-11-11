@@ -1,10 +1,11 @@
 # Changelog
 
-## 0.2.0 - 2026-11-11
+## 0.2.1 - 2026-11-11
 
 - Support per-worker Cloudflare Access Service Tokens for enrollment and reports.
 - Add Access credential rotation without replacing an existing worker identity.
 - Document Cloudflare Access policies and nginx event-stream proxying.
+- Include root-level proxy examples in archives and verify deployment contents during release builds.
 - Add optional external administrator authentication while retaining worker keys.
 - Support wildcard IP listeners and explicit HTTP opt-in for private networks.
 

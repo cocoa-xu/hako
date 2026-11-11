@@ -80,6 +80,8 @@ jobs:
           GORELEASER_CURRENT_TAG: ${{ inputs.tag }}
           NOTARY_PROFILE: hako-release
           NOTARY_KEYCHAIN: ${{ runner.temp }}/hako-signing.keychain-db
+      - name: Verify release archive contents
+        run: python3 scripts/verify-archives.py dist
       - name: Remove signing material
         if: always()
         run: |

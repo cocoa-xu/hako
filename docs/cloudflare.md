@@ -1,6 +1,6 @@
 # Cloudflare Access
 
-These options require v0.2.0 or later. The v0.1.0 worker cannot send
+These options require v0.2.1 or later. The v0.1.0 worker cannot send
 Access Service Token headers. Upgrade the worker before protecting its endpoint.
 
 ## Access policies and origin

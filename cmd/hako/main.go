@@ -20,7 +20,7 @@ import (
 	"github.com/cocoa-xu/hako/internal/server"
 )
 
-var version = "0.2.0-dev"
+var version = "0.2.1-dev"
 var commit = "unknown"
 var buildDate = "unknown"
 

@@ -40,13 +40,15 @@ archives:
       - docs/*.md
       - licenses/*
       - deploy/**/*
+      - deploy/Caddyfile
+      - deploy/nginx.conf
       - scripts/install-worker.sh
       - scripts/install-server.sh
       - scripts/export-sqlite.py
 checksum:
   name_template: SHA256SUMS
 snapshot:
-  version_template: 0.2.0-dev-{{ .ShortCommit }}
+  version_template: 0.2.1-dev-{{ .ShortCommit }}
 changelog:
   use: git
   sort: asc

@@ -39,6 +39,9 @@ metadata validation. It does not save a remote or contact that example repositor
 
 Inspect archive contents, check `hako version`, verify signatures with
 `codesign --verify --strict`, and exercise worker enrollment and server restart.
+Run `python3 scripts/verify-archives.py dist` to check the four archives,
+checksums, and required deployment files. The release workflow also runs this
+check before a draft can be considered ready for publication.
 Installer layouts can be tested without root or starting services:
 
 ```sh
