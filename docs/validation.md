@@ -1,6 +1,6 @@
 # Local validation
 
-Release preparation checked on 2026-11-11. No GitHub release was created and no
+Release preparation and PostgreSQL cutover checked on 2026-11-11. No GitHub release was created and no
 notarization submission was made.
 
 ## Passed
@@ -8,6 +8,10 @@ notarization submission was made.
 - `go test -race ./...` and `go vet ./...`, including enrollment expiry, concurrent
   single-key claims, lost-response retries, credential revocation, browser sessions,
   origin restrictions, database persistence, legacy migration, and UUID rename.
+  Server tests run against real PostgreSQL 18.6, with isolated databases.
+- PostgreSQL receiver ownership, newer-schema rejection, import rollback, and
+  a terminated database session. A stale receiver cannot reconnect and undo
+  a device revocation. Database health correctly reports an unavailable session.
 - JavaScript syntax, shell syntax, macOS plist validation, and whitespace checks.
 - Source privacy audit and a separate reachable-history scan for local runtime
   identifiers, private addresses, home-directory paths, and signing-account data.
@@ -23,10 +27,13 @@ notarization submission was made.
   one-time key creation, pending-key revocation, and display-name editing worked.
   The rename preserved UUID and hostname. The removal prompt explains revocation.
   API removal rejected subsequent reports from the disposable worker.
-- The existing local worker migrated to SQLite and a stable UUID. The updated
+- The existing SQLite state migrated to PostgreSQL without changing UUIDs,
+  worker credential digests, names, or revocation states. The updated
   server and worker resumed live reports; CPU and network collection succeeded,
   hardware inventory remained cached, and unauthenticated fleet reads were denied
-  on both configured listeners.
+  on both configured listeners. The application uses a non-superuser database role.
+- A live PostgreSQL logical backup restored into a separate disposable database
+  with matching device identities and credential digests.
 
 ## Still requires deployment validation
 
@@ -39,6 +46,6 @@ notarization submission was made.
   secrets. Local snapshot builds deliberately do not exercise external publishing.
 
 The local development binary was signed with the configured Apple identity.
-Snapshot archives retain ad-hoc signatures, without embedding that publisher's
-certificate. Temporary UI test state and installer staging directories were
+PostgreSQL snapshot archives retain ad-hoc signatures, without embedding that
+publisher's certificate. Temporary UI test state and installer staging directories were
 removed after validation.
