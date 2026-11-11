@@ -39,8 +39,9 @@ notarization submission was made.
 
 - Intel Mac live collection, older macOS versions, and actual root LaunchDaemon
   installation. Cross-compilation and plist checks do not replace these checks.
-- Linux server execution and actual systemd installation. The available remote
-  test host was unreachable during this run; Linux binaries were cross-compiled.
+- Actual Linux systemd installation. The public CI run passed tests, including
+  PostgreSQL server integration tests, on Linux and macOS; a full systemd
+  installation has not yet been exercised.
 - Production DNS, HTTPS proxy configuration, and certificate issuance.
 - Developer ID notarization and the GitHub draft-release workflow with real CI
   secrets. Local snapshot builds deliberately do not exercise external publishing.

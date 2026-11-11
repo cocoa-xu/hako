@@ -47,8 +47,8 @@ identifiers and network addresses; keep saved reports private.
   revocation, and authenticated endpoints.
 - [Collection semantics](docs/data-collection.md): fields, cadence, resource
   calculations, and unavailable observations.
-- [Release process](docs/releases.md): local artifacts, Apple signing, future
-  GitHub draft releases, and publication checks.
+- [Release process](docs/releases.md): local artifacts, Apple signing,
+  GitHub releases, and publication checks.
 
 There is no hosted service or demo dataset. Hako stores the latest observation
 for each machine, not a time-series history. LLDP and session-app collection are

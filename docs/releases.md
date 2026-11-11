@@ -81,10 +81,10 @@ package could support stapled offline distribution. Do not remove quarantine as
 a substitute for validating a distributed release. See
 [Apple's notarization guidance](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
-## Future GitHub draft release
+## GitHub draft release
 
-No repository creation or publication is part of local rehearsal. Once the owner
-has chosen a GitHub repository and authorized publication:
+Local rehearsal never publishes artifacts. Release automation for
+[`cocoa-xu/hako`](https://github.com/cocoa-xu/hako) uses a reviewed version tag:
 
 1. Push the reviewed source and version tag to that repository.
 2. Create a GitHub Actions environment named `release`. Configure its protection

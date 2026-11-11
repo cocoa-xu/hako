@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-11-11
 
 - Add a Mac fleet dashboard with live CPU, memory, storage, and network metrics.
 - Sample every two seconds and push updates through a reconnecting event stream.
