@@ -45,6 +45,13 @@ type Server struct {
 	registry    registry
 	adminKey    string
 	publicURL   *url.URL
+	adminAuth   string
+}
+
+// Config controls proxy-facing origin and administrator authentication.
+type Config struct {
+	PublicURL string
+	AdminAuth string
 }
 
 func validID(id string) bool { return identity.Valid(id) }
@@ -64,10 +71,23 @@ func New(directory, databaseURL string) (*Server, error) {
 
 // NewWithOrigin configures the external HTTPS origin used by a reverse proxy.
 func NewWithOrigin(directory, databaseURL, origin string) (*Server, error) {
+	return NewWithConfig(directory, databaseURL, Config{PublicURL: origin})
+}
+
+// NewWithConfig opens a receiver with explicit deployment settings.
+func NewWithConfig(directory, databaseURL string, config Config) (*Server, error) {
+	if config.AdminAuth == "" {
+		config.AdminAuth = "builtin"
+	}
+	if config.AdminAuth != "builtin" && config.AdminAuth != "external" {
+		return nil, fmt.Errorf("admin-auth must be builtin or external")
+	}
 	if err := Prepare(directory); err != nil {
 		return nil, err
 	}
 	s := &Server{directory: directory, databaseURL: databaseURL, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{})}
+	s.adminAuth = config.AdminAuth
+	origin := config.PublicURL
 	if origin != "" {
 		config := agent.Config{Server: origin, DeviceID: strings.Repeat("0", 32), Token: strings.Repeat("0", 64)}
 		if err := config.Validate(); err != nil {
@@ -87,8 +107,10 @@ func NewWithOrigin(directory, databaseURL, origin string) (*Server, error) {
 	if err := s.loadRegistry(); err != nil {
 		return nil, err
 	}
-	if err := s.loadAdminKey(); err != nil {
-		return nil, err
+	if s.adminAuth == "builtin" {
+		if err := s.loadAdminKey(); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.loadMachines(); err != nil {
 		return nil, err
@@ -99,15 +121,27 @@ func NewWithOrigin(directory, databaseURL, origin string) (*Server, error) {
 
 func (s *Server) Handler(additionalHosts ...string) http.Handler {
 	allowedHosts := make(map[string]bool, len(additionalHosts))
+	var wildcardIPv4, wildcardIPv6 bool
 	for _, host := range additionalHosts {
-		if ip := net.ParseIP(host); ip != nil && !ip.IsUnspecified() {
-			allowedHosts[ip.String()] = true
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.IsUnspecified() {
+				if ip.To4() != nil {
+					wildcardIPv4 = true
+				} else {
+					wildcardIPv6 = true
+				}
+			} else {
+				allowedHosts[ip.String()] = true
+			}
 		}
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/machines", s.requireAdmin(s.list))
 	mux.HandleFunc("GET /api/events", s.requireAdmin(s.events))
-	mux.HandleFunc("GET /api/session", s.requireAdmin(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	mux.HandleFunc("GET /api/session", s.requireAdmin(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Hako-Admin-Auth", s.adminAuth)
+		w.WriteHeader(http.StatusNoContent)
+	}))
 	mux.HandleFunc("POST /api/session", s.login)
 	mux.HandleFunc("POST /api/logout", s.requireAdmin(s.logout))
 	mux.HandleFunc("POST /api/enroll", s.register)
@@ -138,8 +172,9 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 			host = r.Host
 		}
 		ip := net.ParseIP(host)
+		wildcardHost := ip != nil && !ip.IsUnspecified() && ((ip.To4() != nil && wildcardIPv4) || (ip.To4() == nil && wildcardIPv6))
 		publicHost := s.publicURL != nil && r.Host == s.publicURL.Host
-		if !publicHost && host != "localhost" && (ip == nil || (!ip.IsLoopback() && !allowedHosts[ip.String()])) {
+		if !publicHost && !wildcardHost && host != "localhost" && (ip == nil || (!ip.IsLoopback() && !allowedHosts[ip.String()])) {
 			http.Error(w, "This host is not configured for the receiver.", http.StatusForbidden)
 			return
 		}

@@ -24,6 +24,7 @@ type Config struct {
 	Token            string              `json:"token"`
 	Pending          bool                `json:"pending,omitempty"`
 	CloudflareAccess *AccessServiceToken `json:"cloudflare_access,omitempty"`
+	AllowHTTP        bool                `json:"allow_http,omitempty"`
 }
 
 // ErrUnauthorized means Hako or its access proxy rejected worker authentication.
@@ -36,8 +37,8 @@ func (c Config) Validate() error {
 	}
 	ip := net.ParseIP(u.Hostname())
 	loopback := ip != nil && ip.IsLoopback()
-	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return fmt.Errorf("server requires HTTPS, except for a loopback IP address")
+	if u.Scheme != "https" && !(u.Scheme == "http" && (loopback || c.AllowHTTP)) {
+		return fmt.Errorf("server requires HTTPS; use --allow-http only for a trusted private network")
 	}
 	if !identity.Valid(identity.Normalize(c.DeviceID)) || len(c.Token) < 32 {
 		return fmt.Errorf("invalid agent credentials")

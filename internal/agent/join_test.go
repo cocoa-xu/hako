@@ -35,7 +35,7 @@ func TestJoinRetainsPendingIdentityAfterLostAcknowledgement(t *testing.T) {
 	}))
 	defer receiver.Close()
 	path := filepath.Join(t.TempDir(), "worker.json")
-	if err := JoinWithAccess(context.Background(), receiver.URL, key, path, access); err == nil {
+	if err := JoinWithOptions(context.Background(), receiver.URL, key, path, JoinOptions{CloudflareAccess: access}); err == nil {
 		t.Fatal("failed registration reported success")
 	}
 	text, err := ReadSecret(path)

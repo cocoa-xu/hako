@@ -42,6 +42,8 @@ identifiers and network addresses; keep saved reports private.
 
 - [Deployment](docs/deployment.md): Linux or macOS server, HTTPS, worker services,
   enrollment, removal, upgrades, and backups.
+- [Cloudflare Access](docs/cloudflare.md): per-worker Service Tokens, upgrades,
+  proxy configuration, and optional external administrator authentication.
 - [PostgreSQL](docs/postgresql.md): database setup, migrations, and backup/restore.
 - [Security and API](docs/security.md): credential scopes, UUIDs, expiry,
   revocation, and authenticated endpoints.

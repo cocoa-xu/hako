@@ -72,12 +72,60 @@ HTTPS separately; the supplied template listens on loopback only.
   --listen 127.0.0.1:8787
 ```
 
-For explicit LAN listeners, repeat `--listen` with each concrete `IP:port`.
-Wildcard addresses are rejected. Plain HTTP on a LAN is suitable only for a
-trusted local development environment: administrator credentials and telemetry
-are not transport-encrypted. Remote workers require HTTPS; only literal
-loopback IPs allow HTTP. In local development, ignored `.local/listen-addresses`
-can add listeners to `scripts/run-local.sh` without changing tracked source.
+The default listener is `127.0.0.1:8787`. To accept connections on every IPv4
+interface, including LAN and Tailscale, use `--listen 0.0.0.0:8787`. For IPv6,
+add `--listen '[::]:8787'`. Repeat `--listen` to bind multiple addresses.
+Wildcard listeners accept literal destination IPs; arbitrary DNS Host headers
+are still rejected. Use `--public-url` for the browser-facing HTTPS hostname.
+
+`HAKO_LISTEN` sets the default listen address when no `--listen` flag is supplied.
+For Linux service installation, pass `--listen 0.0.0.0:8787` to the installer or
+set `HAKO_LISTEN=0.0.0.0:8787` in `/etc/hako/server.env` and restart the service.
+Rerunning the installer preserves existing settings unless explicitly replaced.
+In local development, ignored `.local/listen-addresses` can add listeners to
+`scripts/run-local.sh` without changing tracked source.
+
+HTTPS remains the worker default. If connecting directly over Tailscale or a
+trusted LAN using an HTTP IP endpoint, explicitly add `--allow-http` to `join`
+or the worker installer. This choice is saved in `worker.json` for future
+reports. Hako still verifies enrollment and worker tokens. HTTP does not encrypt
+credentials or telemetry; Tailscale encrypts its transport, while a plain LAN
+does not. Restrict access to the listener with host firewall and network policy.
+
+### Delegate administrator authentication
+
+`--admin-auth builtin` is the default. It keeps Hako's administrator key and
+browser login, including when Cloudflare Access is enabled. To delegate the
+dashboard and all management API authentication to an upstream access policy:
+
+```sh
+./hako serve --data-dir ./server-data --database-url-file ./database.url \
+  --public-url https://hako.example.com --admin-auth external \
+  --listen 0.0.0.0:8787
+```
+
+The same setting is available as `HAKO_ADMIN_AUTH=external`, or through the
+Linux installer's `--admin-auth external` flag. Explicit command-line flags
+override environment settings. With a macOS LaunchAgent, add `--admin-auth`
+and `external` to `ProgramArguments`, or set `HAKO_ADMIN_AUTH` in its
+`EnvironmentVariables` dictionary.
+
+External mode opens the dashboard without a Hako sign-in step and hides Hako's
+sign-out button. It does not create an administrator key or local sessions.
+Existing keys are left on disk for switching back to builtin mode. Worker
+enrollment, per-device token verification, expiry, and revocation stay enabled.
+Host and cross-origin checks also stay enabled.
+
+Every request that reaches an external-mode listener has administrator access.
+This includes direct LAN and Tailscale connections; Cloudflare only protects
+traffic that actually passes through its policy. Configure network access
+accordingly. Hako does not validate Cloudflare JWTs or infer trust from forwarded
+identity headers. For Access, restrict worker Service Tokens to worker paths as
+described in the [Cloudflare guide](cloudflare.md).
+
+Administrator CLI commands accept `--admin-auth external` in place of
+`--admin-key-file`. They include the non-browser request header required for
+mutations. Browser mutations must still supply the exact same-origin Origin.
 
 ## Enroll a Mac
 
@@ -129,6 +177,10 @@ CPU, memory, and network sampling does not require root.
 Run these as the account that owns the administrator key. `--key-out` creates a
 private file and refuses an existing destination. Without it, `invite` writes
 the enrollment key to standard output. Do not capture that output in shared logs.
+
+For a management endpoint behind Cloudflare Access, add
+`--access-service-token-file ./admin-access.json` with a Service Token authorized
+for management routes. Use a separate administrator token, never a worker token.
 
 ## Rename, remove, and replace
 

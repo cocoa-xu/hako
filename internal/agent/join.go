@@ -60,11 +60,17 @@ func SavePrivate(path string, data []byte) error {
 
 // Join consumes one enrollment key and stores a stable installation identity.
 func Join(ctx context.Context, server, key, path string) error {
-	return JoinWithAccess(ctx, server, key, path, nil)
+	return JoinWithOptions(ctx, server, key, path, JoinOptions{})
 }
 
-// JoinWithAccess enrolls a worker through an optional Cloudflare Access policy.
-func JoinWithAccess(ctx context.Context, server, key, path string, access *AccessServiceToken) error {
+// JoinOptions controls access proxy credentials and private-network transport.
+type JoinOptions struct {
+	CloudflareAccess *AccessServiceToken
+	AllowHTTP        bool
+}
+
+// JoinWithOptions enrolls a worker with explicit transport settings.
+func JoinWithOptions(ctx context.Context, server, key, path string, options JoinOptions) error {
 	if len(key) != 64 || strings.Trim(key, "0123456789abcdef") != "" {
 		return fmt.Errorf("invalid enrollment key")
 	}
@@ -95,8 +101,11 @@ func JoinWithAccess(ctx context.Context, server, key, path string, access *Acces
 		config.DeviceID = identity.New()
 		config.Token = hex.EncodeToString(token[:])
 	}
-	if access != nil {
-		config.CloudflareAccess = access
+	if options.CloudflareAccess != nil {
+		config.CloudflareAccess = options.CloudflareAccess
+	}
+	if options.AllowHTTP {
+		config.AllowHTTP = true
 	}
 	if err := config.Validate(); err != nil {
 		return err

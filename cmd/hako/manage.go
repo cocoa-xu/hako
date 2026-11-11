@@ -24,6 +24,7 @@ func join(ctx context.Context, args []string) error {
 	keyFile := flags.String("key-file", "", "private file containing the enrollment key")
 	keyStdin := flags.Bool("key-stdin", false, "read the enrollment key from standard input")
 	accessFile := flags.String("access-service-token-file", "", "private JSON file containing a Cloudflare Access service token")
+	allowHTTP := flags.Bool("allow-http", false, "allow unencrypted HTTP on a trusted private network")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -52,7 +53,7 @@ func join(ctx context.Context, args []string) error {
 			return err
 		}
 	}
-	if err := agent.JoinWithAccess(ctx, *server, key, *config, access); err != nil {
+	if err := agent.JoinWithOptions(ctx, *server, key, *config, agent.JoinOptions{CloudflareAccess: access, AllowHTTP: *allowHTTP}); err != nil {
 		return err
 	}
 	fmt.Println("Worker enrolled. Configuration saved to", *config)
@@ -89,6 +90,9 @@ func manage(ctx context.Context, command string, args []string) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	server := flags.String("server", "http://127.0.0.1:8787", "receiver origin")
 	keyFile := flags.String("admin-key-file", "", "private administrator key file")
+	adminAuth := flags.String("admin-auth", envDefault("HAKO_ADMIN_AUTH", "builtin"), "administrator authentication: builtin or external")
+	accessFile := flags.String("access-service-token-file", "", "private JSON file containing an administrator Cloudflare Access service token")
+	allowHTTP := flags.Bool("allow-http", false, "allow unencrypted HTTP on a trusted private network")
 	ttl := flags.Duration("ttl", 15*time.Minute, "enrollment lifetime, between 1 minute and 24 hours")
 	label := flags.String("label", "", "optional enrollment label")
 	keyOut := flags.String("key-out", "", "save the new enrollment key to a private file")
@@ -97,12 +101,26 @@ func manage(ctx context.Context, command string, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if flags.NArg() != 0 || *keyFile == "" {
-		return fmt.Errorf("provide --admin-key-file")
+	if flags.NArg() != 0 || (*adminAuth != "builtin" && *adminAuth != "external") {
+		return fmt.Errorf("provide --admin-auth builtin or external without positional arguments")
 	}
-	key, err := agent.ReadSecret(*keyFile)
-	if err != nil {
-		return err
+	if (*adminAuth == "builtin" && *keyFile == "") || (*adminAuth == "external" && *keyFile != "") {
+		return fmt.Errorf("provide --admin-key-file for builtin authentication; omit it with --admin-auth external")
+	}
+	var key string
+	var err error
+	if *keyFile != "" {
+		key, err = agent.ReadSecret(*keyFile)
+		if err != nil {
+			return err
+		}
+	}
+	options := control.Options{AllowHTTP: *allowHTTP}
+	if *accessFile != "" {
+		options.CloudflareAccess, err = agent.ReadAccessServiceToken(*accessFile)
+		if err != nil {
+			return err
+		}
 	}
 	method, path := http.MethodGet, "/api/machines"
 	var body any
@@ -130,7 +148,7 @@ func manage(ctx context.Context, command string, args []string) error {
 			path = "/api/enrollments/" + *id
 		}
 	}
-	data, err := control.Call(ctx, *server, key, method, path, body)
+	data, err := control.Call(ctx, *server, key, method, path, body, options)
 	if err != nil {
 		return err
 	}

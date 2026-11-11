@@ -30,7 +30,7 @@ func TestAccessEnrollmentReportsAndRotation(t *testing.T) {
 	}))
 	defer receiver.Close()
 	path := filepath.Join(t.TempDir(), "worker.json")
-	if err := JoinWithAccess(context.Background(), receiver.URL, key, path, access); err != nil {
+	if err := JoinWithOptions(context.Background(), receiver.URL, key, path, JoinOptions{CloudflareAccess: access, AllowHTTP: true}); err != nil {
 		t.Fatal(err)
 	}
 	load := func() Config {
@@ -46,6 +46,9 @@ func TestAccessEnrollmentReportsAndRotation(t *testing.T) {
 		return config
 	}
 	config := load()
+	if !config.AllowHTTP {
+		t.Fatal("explicit HTTP transport choice was not saved")
+	}
 	workerToken = config.Token
 	a, err := New(config, &fakeCollector{})
 	if err != nil {
@@ -59,11 +62,32 @@ func TestAccessEnrollmentReportsAndRotation(t *testing.T) {
 			t.Fatal(err)
 		}
 		updated := load()
-		if updated.DeviceID != config.DeviceID || updated.Token != config.Token || updated.Pending || updated.Server != config.Server {
+		if updated.DeviceID != config.DeviceID || updated.Token != config.Token || updated.Pending || updated.Server != config.Server || updated.AllowHTTP != config.AllowHTTP {
 			t.Fatal("Access update changed worker identity")
 		}
 		if replacement == nil && updated.CloudflareAccess != nil || replacement != nil && (updated.CloudflareAccess == nil || *updated.CloudflareAccess != *replacement) {
 			t.Fatal("Access update was not persisted")
+		}
+	}
+}
+
+func TestPrivateHTTPRequiresExplicitOptIn(t *testing.T) {
+	config := Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: strings.Repeat("a", 64)}
+	for _, origin := range []string{"http://100.64.0.10:8787", "http://192.0.2.10:8787"} {
+		config.Server = origin
+		config.AllowHTTP = false
+		if config.Validate() == nil {
+			t.Fatal("HTTP was allowed implicitly")
+		}
+		config.AllowHTTP = true
+		if err := config.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, origin := range []string{"ftp://192.0.2.10", "http://user:password@192.0.2.10", "http://192.0.2.10/path"} {
+		config.Server = origin
+		if config.Validate() == nil {
+			t.Fatal("HTTP opt-in disabled origin validation")
 		}
 	}
 }
@@ -102,7 +126,7 @@ func TestAccessEnrollmentDoesNotFollowRedirects(t *testing.T) {
 	}))
 	defer receiver.Close()
 	access := &AccessServiceToken{ClientID: "test.access", ClientSecret: "test-secret"}
-	if err := JoinWithAccess(context.Background(), receiver.URL, strings.Repeat("b", 64), filepath.Join(t.TempDir(), "worker.json"), access); err == nil {
+	if err := JoinWithOptions(context.Background(), receiver.URL, strings.Repeat("b", 64), filepath.Join(t.TempDir(), "worker.json"), JoinOptions{CloudflareAccess: access}); err == nil {
 		t.Fatal("Access login redirect reported success")
 	}
 }

@@ -54,6 +54,9 @@ func (s *Server) loadAdminKey() error {
 }
 
 func (s *Server) authorized(r *http.Request) bool {
+	if s.adminAuth == "external" {
+		return true
+	}
 	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return subtle.ConstantTimeCompare([]byte(hashSecret(token)), []byte(hashSecret(s.adminKey))) == 1
 	}
@@ -73,7 +76,8 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "Sign in to continue.", http.StatusUnauthorized)
 			return
 		}
-		if r.Method != "GET" && r.Method != "HEAD" && r.Header.Get("Authorization") == "" && r.Header.Get("Origin") == "" {
+		cli := s.adminAuth == "builtin" && r.Header.Get("Authorization") != "" || s.adminAuth == "external" && r.Header.Get("X-Hako-Request") == "cli"
+		if r.Method != "GET" && r.Method != "HEAD" && !cli && r.Header.Get("Origin") == "" {
 			http.Error(w, "A same-origin request is required.", http.StatusForbidden)
 			return
 		}
@@ -82,6 +86,10 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if s.adminAuth == "external" {
+		http.Error(w, "Administrator authentication is managed externally.", http.StatusNotFound)
+		return
+	}
 	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || !s.authorized(r) {
 		http.Error(w, "Invalid administrator key.", http.StatusUnauthorized)
 		return
@@ -112,6 +120,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if s.adminAuth == "external" {
+		http.Error(w, "Administrator authentication is managed externally.", http.StatusNotFound)
+		return
+	}
 	if cookie, err := r.Cookie(sessionCookie); err == nil {
 		s.mu.Lock()
 		next := s.copyRegistry()

@@ -5,14 +5,16 @@ package_dir=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 server_url=
 key_file=
 access_file=
+allow_http=false
 staging_root=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --server) server_url=${2:?Missing server URL}; shift 2 ;;
     --key-file) key_file=${2:?Missing key file}; shift 2 ;;
     --access-service-token-file) access_file=${2:?Missing Access service token file}; shift 2 ;;
+    --allow-http) allow_http=true; shift ;;
     --staging-root) staging_root=${2:?Missing staging directory}; shift 2 ;;
-    --help) printf 'Usage: %s [--server https://host --key-file enrollment.key] [--access-service-token-file access.json] [--staging-root directory]\n' "$0"; exit 0 ;;
+    --help) printf 'Usage: %s [--server https://host --key-file enrollment.key] [--access-service-token-file access.json] [--allow-http] [--staging-root directory]\n' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
@@ -45,6 +47,7 @@ if [ -n "$staging_root" ]; then printf 'Staged worker files in %s\n' "$staging_r
 if [ ! -f "$config" ] || [ -n "$server_url" ]; then
   set -- "$binary_dir/hako" join --server "$server_url" --config "$config" --key-file "$key_file"
   if [ -n "$access_file" ]; then set -- "$@" --access-service-token-file "$access_file"; fi
+  if [ "$allow_http" = true ]; then set -- "$@" --allow-http; fi
   "$@"
 elif [ -n "$access_file" ]; then
   "$binary_dir/hako" configure-access --config "$config" --service-token-file "$access_file"

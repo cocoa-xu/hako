@@ -152,6 +152,30 @@ func TestReportsRejectTrailingJSONAndOversizedBodies(t *testing.T) {
 	}
 }
 
+func TestWildcardHostKeepsRebindingAndOriginChecks(t *testing.T) {
+	s, _ := setup(t)
+	for _, test := range []struct {
+		host, origin string
+		want         int
+	}{
+		{"192.0.2.10:8787", "", 200},
+		{"100.64.0.10:8787", "http://100.64.0.10:8787", 200},
+		{"attacker.example:8787", "", 403},
+		{"192.0.2.10:8787", "http://attacker.example", 403},
+		{"0.0.0.0:8787", "", 403},
+		{"[2001:db8::1]:8787", "", 403},
+	} {
+		request := httptest.NewRequest("GET", "http://"+test.host+"/api/machines", nil)
+		request.Header.Set("Authorization", "Bearer "+s.adminKey)
+		request.Header.Set("Origin", test.origin)
+		response := httptest.NewRecorder()
+		s.Handler("0.0.0.0").ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("host %s: got %d, want %d", test.host, response.Code, test.want)
+		}
+	}
+}
+
 func TestDashboardUsesEmbeddedAssets(t *testing.T) {
 	s, _ := setup(t)
 	for _, path := range []string{"/", "/app.js", "/style.css", "/icon.svg", "/machine.svg"} {

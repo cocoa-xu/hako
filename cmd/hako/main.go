@@ -144,19 +144,20 @@ func run(ctx context.Context, args []string) error {
 		databaseFile := flags.String("database-url-file", "", "private file containing the PostgreSQL connection URL")
 		directory := flags.String("data-dir", ".local", "receiver state directory")
 		publicURL := flags.String("public-url", "", "external HTTPS origin when behind a reverse proxy")
+		adminAuth := flags.String("admin-auth", envDefault("HAKO_ADMIN_AUTH", "builtin"), "administrator authentication: builtin or external (trust upstream access control)")
 		var addresses listenAddresses
 		flags.Var(&addresses, "listen", "HTTP listen address (repeatable; defaults to 127.0.0.1:8787)")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if len(addresses) == 0 {
-			addresses = append(addresses, "127.0.0.1:8787")
+			addresses = append(addresses, envDefault("HAKO_LISTEN", "127.0.0.1:8787"))
 		}
 		databaseURL, err := databaseConnection(*databaseFile)
 		if err != nil {
 			return err
 		}
-		s, err := server.NewWithOrigin(*directory, databaseURL, *publicURL)
+		s, err := server.NewWithConfig(*directory, databaseURL, server.Config{PublicURL: *publicURL, AdminAuth: *adminAuth})
 		if err != nil {
 			return err
 		}
@@ -165,6 +166,13 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func envDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func databaseConnection(path string) (string, error) {

@@ -422,16 +422,24 @@ detailTabs.forEach((button, index) => {
 });
 let events = null;
 let checkingSession = false;
+let adminAuth = 'builtin';
 function showSignIn() {
   events?.close(); events = null;
   if ($('detail').open) $('detail').close();
   if ($('enrollment').open) $('enrollment').close();
   machines = []; selectedID = null; connected = false;
   $('machine-rows').replaceChildren();
+  if (adminAuth === 'external') {
+    $('workspace').hidden = false; $('sign-out').hidden = true; $('sign-in').hidden = true;
+    render();
+    $('connection-error').textContent = 'Access was interrupted. Reload this page to sign in through your access provider.';
+    $('connection-error').hidden = false;
+    return;
+  }
   $('workspace').hidden = true; $('sign-out').hidden = true; $('sign-in').hidden = false;
 }
 function startEvents() {
-  $('sign-in').hidden = true; $('workspace').hidden = false; $('sign-out').hidden = false;
+  $('sign-in').hidden = true; $('workspace').hidden = false; $('sign-out').hidden = adminAuth === 'external';
   events?.close();
   events = new EventSource('/api/events');
   events.addEventListener('machines', event => {
@@ -448,7 +456,10 @@ function startEvents() {
 }
 async function api(path, method = 'GET', body) {
   const response = await fetch(path, {method, headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
-  if (response.status === 401) { showSignIn(); throw new Error('Your session expired. Sign in again.'); }
+  if (response.status === 401) {
+    showSignIn();
+    throw new Error(adminAuth === 'external' ? 'Access was interrupted. Reload this page to sign in again.' : 'Your session expired. Sign in again.');
+  }
   if (!response.ok) throw new Error((await response.text()).trim() || `Request failed (${response.status}).`);
   return response.status === 204 ? null : response.json();
 }
@@ -519,7 +530,11 @@ $('remove-machine').addEventListener('click', async () => {
   finally { $('remove-machine').disabled = false; }
 });
 async function initialize() {
-  try { if ((await fetch('/api/session')).ok) startEvents(); else showSignIn(); }
+  try {
+    const response = await fetch('/api/session');
+    adminAuth = response.headers.get('X-Hako-Admin-Auth') || 'builtin';
+    if (response.ok) startEvents(); else showSignIn();
+  }
   catch { showSignIn(); showFormError('sign-in-error', new Error('The server is unavailable. Try signing in when it returns.')); }
 }
 window.setInterval(() => { if (machines.length) render(); }, 2000);

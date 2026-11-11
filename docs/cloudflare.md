@@ -8,6 +8,8 @@ Access Service Token headers. Upgrade the worker before protecting its endpoint.
 Use an identity allowlist for the dashboard. Keep Hako's built-in administrator
 login enabled unless deliberately delegating all administrator access to the
 proxy. Every worker still needs a Hako enrollment key and its own worker token.
+The optional `--admin-auth external` setting is described in
+[administrator authentication](deployment.md#delegate-administrator-authentication).
 
 Create a separate Cloudflare Access Service Token for each Mac. Authorize those
 tokens with a **Service Auth** policy covering `/api/enroll` and `/api/reports`.
@@ -59,6 +61,10 @@ The Access pair is saved under `cloudflare_access` in the private worker JSON,
 including pending enrollment retries. Remove the input token file after safely
 storing the credentials; it is not needed for subsequent reports. The Hako
 enrollment key is not persisted in worker configuration.
+
+Administrator CLI commands also accept `--access-service-token-file`. Use an
+administrator-specific Access token authorized for the management routes and,
+in builtin mode, `--admin-key-file` as well.
 
 ## Existing workers and token rotation
 

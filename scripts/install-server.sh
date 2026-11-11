@@ -4,13 +4,17 @@ umask 077
 package_dir=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 database_file=
 public_url=
+admin_auth=
+listen_address=
 staging_root=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --database-url-file) database_file=${2:?Missing database connection file}; shift 2 ;;
     --public-url) public_url=${2:?Missing public URL}; shift 2 ;;
+    --admin-auth) admin_auth=${2:?Missing administrator authentication mode}; shift 2 ;;
+    --listen) listen_address=${2:?Missing listen address}; shift 2 ;;
     --staging-root) staging_root=${2:?Missing staging directory}; shift 2 ;;
-    --help) printf 'Usage: %s [--public-url https://host --database-url-file database.url] [--staging-root directory]\n' "$0"; exit 0 ;;
+    --help) printf 'Usage: %s [--public-url https://host --database-url-file database.url] [--admin-auth builtin|external] [--listen IP:port] [--staging-root directory]\n' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
@@ -18,6 +22,13 @@ if [ -n "$staging_root" ]; then
   case "$staging_root" in /) exit 1 ;; /*) ;; *) printf 'Staging root must be absolute.\n' >&2; exit 1 ;; esac
 elif [ "$(uname -s)" != Linux ] || [ "$(id -u)" != 0 ]; then
   printf 'Run this installer as root on Linux with systemd.\n' >&2; exit 1
+fi
+case "$admin_auth" in
+  ''|builtin|external) ;;
+  *) printf 'Administrator authentication must be builtin or external.\n' >&2; exit 1 ;;
+esac
+if [ -n "$listen_address" ] && ! printf '%s\n' "$listen_address" | LC_ALL=C grep -Eq '^([0-9.]+|\[[0-9A-Fa-f:]+\]):[0-9]+$'; then
+  printf 'Listen address must be an IP address and port.\n' >&2; exit 1
 fi
 if [ -n "$public_url" ] && ! printf '%s\n' "$public_url" | LC_ALL=C grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$'; then
   printf 'Provide an HTTPS origin without a path, query, or credentials.\n' >&2; exit 1
@@ -43,10 +54,19 @@ install -d -m 0700 "$state_dir"
 install -m 0755 "$source_binary" "$binary_dir/hako.next"
 mv -f "$binary_dir/hako.next" "$binary_dir/hako"
 install -m 0644 "$package_dir/deploy/linux/hako.service" "$unit_dir/hako.service"
-if [ -n "$public_url" ]; then
-  printf 'HAKO_PUBLIC_URL=%s\n' "$public_url" > "$config_dir/server.env"
-  chmod 0644 "$config_dir/server.env"
-fi
+set_environment() {
+  if [ -z "$2" ]; then return; fi
+  environment_next=$(mktemp "$config_dir/server.env.XXXXXX")
+  if [ -f "$config_dir/server.env" ]; then
+    awk -v key="$1" 'index($0, key "=") != 1' "$config_dir/server.env" > "$environment_next"
+  fi
+  printf '%s=%s\n' "$1" "$2" >> "$environment_next"
+  chmod 0644 "$environment_next"
+  mv -f "$environment_next" "$config_dir/server.env"
+}
+set_environment HAKO_PUBLIC_URL "$public_url"
+set_environment HAKO_ADMIN_AUTH "$admin_auth"
+set_environment HAKO_LISTEN "$listen_address"
 if [ -n "$database_file" ]; then
   install -m 0600 "$database_file" "$config_dir/database.url.next"
   mv -f "$config_dir/database.url.next" "$config_dir/database.url"

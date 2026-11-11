@@ -67,7 +67,7 @@ func TestListenFailureClosesEarlierListeners(t *testing.T) {
 }
 
 func TestListenRequiresExplicitIPAddresses(t *testing.T) {
-	for _, address := range []string{"", ":8787", "0.0.0.0:8787", "[::]:8787", "localhost:8787"} {
+	for _, address := range []string{"", ":8787", "localhost:8787"} {
 		if _, _, err := listen(context.Background(), []string{address}); err == nil {
 			t.Fatalf("accepted %q", address)
 		}
@@ -75,4 +75,21 @@ func TestListenRequiresExplicitIPAddresses(t *testing.T) {
 	if _, _, err := listen(context.Background(), nil); err == nil {
 		t.Fatal("accepted no listeners")
 	}
+}
+
+func TestWildcardListener(t *testing.T) {
+	listeners, hosts, err := listen(context.Background(), []string{"0.0.0.0:0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listeners[0].Close()
+	if len(hosts) != 1 || hosts[0] != "0.0.0.0" {
+		t.Fatal("wildcard listener lost its host policy")
+	}
+	_, port, _ := net.SplitHostPort(listeners[0].Addr().String())
+	connection, err := net.DialTimeout("tcp4", net.JoinHostPort("127.0.0.1", port), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection.Close()
 }

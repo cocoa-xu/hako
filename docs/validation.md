@@ -1,7 +1,7 @@
 # Local validation
 
-Release preparation and PostgreSQL cutover checked on 2026-11-11. No GitHub release was created and no
-notarization submission was made.
+Validation recorded on 2026-11-11. Release checks below cover v0.1.0; Access and
+external authentication checks cover the subsequent unreleased changes.
 
 ## Passed
 
@@ -34,6 +34,20 @@ notarization submission was made.
   on both configured listeners. The application uses a non-superuser database role.
 - A live PostgreSQL logical backup restored into a separate disposable database
   with matching device identities and credential digests.
+- The published v0.1.0 archives were downloaded from GitHub and their checksums
+  verified. Both macOS binaries passed Developer ID signature and online
+  notarization checks. The native Apple silicon binary reported the expected
+  version. All five public release assets were accessible without authentication.
+- Access Service Token headers on enrollment, pending retries, and reports;
+  credential rotation preserving the worker identity; private file permissions;
+  and rejection of redirects without forwarding Hako or Access credentials.
+- Builtin and external administrator modes, origin checks, session behavior,
+  live events, and unchanged worker enrollment and revocation with PostgreSQL.
+  Wildcard IPv4 listening and literal-IP Host handling retain DNS rebinding and
+  cross-origin rejection. Private-network HTTP requires explicit opt-in.
+- Updated installers staged without root. Reruns preserve the listen address,
+  authentication mode, and database connection when unrelated settings change.
+  The nginx example passed an isolated configuration syntax check.
 
 ## Still requires deployment validation
 
@@ -43,8 +57,9 @@ notarization submission was made.
   PostgreSQL server integration tests, on Linux and macOS; a full systemd
   installation has not yet been exercised.
 - Production DNS, HTTPS proxy configuration, and certificate issuance.
-- Developer ID notarization and the GitHub draft-release workflow with real CI
-  secrets. Local snapshot builds deliberately do not exercise external publishing.
+- Real Cloudflare Access identity and Service Auth policies, per-Mac token
+  revocation, and an event stream through the deployed proxy. Header tests use
+  local HTTP test servers, not a live Cloudflare account.
 
 The local development binary was signed with the configured Apple identity.
 PostgreSQL snapshot archives retain ad-hoc signatures, without embedding that

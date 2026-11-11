@@ -30,10 +30,14 @@ func listen(ctx context.Context, addresses []string) ([]net.Listener, []string, 
 	for _, address := range addresses {
 		host, _, err := net.SplitHostPort(address)
 		ip := net.ParseIP(host)
-		if err != nil || ip == nil || ip.IsUnspecified() {
-			return nil, nil, fmt.Errorf("listen address %q must specify an individual IP address and port", address)
+		if err != nil || ip == nil {
+			return nil, nil, fmt.Errorf("listen address %q must specify an IP address and port", address)
 		}
-		listener, err := config.Listen(ctx, "tcp", address)
+		network := "tcp6"
+		if ip.To4() != nil {
+			network = "tcp4"
+		}
+		listener, err := config.Listen(ctx, network, address)
 		if err != nil {
 			return nil, nil, err
 		}
