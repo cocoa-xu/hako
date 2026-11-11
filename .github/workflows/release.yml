@@ -71,7 +71,7 @@ jobs:
           echo "SIGN_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
           xcrun notarytool store-credentials hako-release --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$signing_keychain"
           rm "$RUNNER_TEMP/hako-signing.p12"
-      - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: v2.20.0
           args: release --clean --draft --parallelism 2

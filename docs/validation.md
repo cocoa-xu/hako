@@ -1,7 +1,7 @@
 # Local validation
 
-Validation recorded on 2026-11-11. Release checks below cover v0.1.0; Access and
-external authentication checks cover the subsequent unreleased changes.
+Validation recorded on 2026-11-11. Completed artifact checks below cover v0.1.0;
+Access and external authentication checks cover the v0.2.0 source.
 
 ## Passed
 

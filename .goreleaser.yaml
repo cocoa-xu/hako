@@ -46,7 +46,7 @@ archives:
 checksum:
   name_template: SHA256SUMS
 snapshot:
-  version_template: 0.1.0-dev-{{ .ShortCommit }}
+  version_template: 0.2.0-dev-{{ .ShortCommit }}
 changelog:
   use: git
   sort: asc

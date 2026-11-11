@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-11-11
 
 - Support per-worker Cloudflare Access Service Tokens for enrollment and reports.
 - Add Access credential rotation without replacing an existing worker identity.
