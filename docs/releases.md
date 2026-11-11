@@ -75,6 +75,18 @@ timestamp, submits each zipped macOS binary for notarization, and waits for an
 Accepted result before packaging. Optional `NOTARY_KEYCHAIN` selects a custom
 keychain containing the profile. Notarization uploads executable code to Apple.
 
+After downloading a release, verify the extracted macOS executable:
+
+```sh
+codesign --verify --strict ./hako
+codesign -vvvv -R=notarized --check-notarization ./hako
+./hako version
+```
+
+The notarization check requires network access when the ticket is not cached.
+Use this check for the standalone CLI; `spctl --assess --type execute` expects an
+app bundle and can reject a valid CLI because it is not an app.
+
 The binary inside a tar archive cannot carry a stapled ticket. Gatekeeper may
 need network access to retrieve its notarization result. A future signed installer
 package could support stapled offline distribution. Do not remove quarantine as
