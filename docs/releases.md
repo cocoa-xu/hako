@@ -87,20 +87,24 @@ Local rehearsal never publishes artifacts. Release automation for
 [`cocoa-xu/hako`](https://github.com/cocoa-xu/hako) uses a reviewed version tag:
 
 1. Push the reviewed source and version tag to that repository.
-2. Create a GitHub Actions environment named `release`. Configure its protection
-   rules and the following secrets:
+2. Configure these repository Actions secrets. An optional `release` environment
+   can provide additional deployment protection; repository secrets remain
+   available to the release job.
 
 | Secret | Content |
 | --- | --- |
-| `SIGN_CERTIFICATE_BASE64` | Base64-encoded Developer ID Application `.p12` |
-| `SIGN_CERTIFICATE_PASSWORD` | Export password for that certificate |
-| `KEYCHAIN_PASSWORD` | Random password for the temporary CI keychain |
-| `SIGN_IDENTITY` | Signing certificate identity or fingerprint |
-| `NOTARY_KEY_BASE64` | Base64-encoded App Store Connect notarization API key |
-| `NOTARY_KEY_ID` | API key ID |
-| `NOTARY_ISSUER_ID` | API issuer ID |
+| `DEV_ID_APP_CERTIFICATE_BASE64` | Base64-encoded Developer ID Application `.p12` |
+| `DEV_ID_APP_CERTIFICATE_PASSWORD` | Export password for that certificate |
+| `KEYCHAIN_PASSWORD` | Password for the temporary CI keychain |
+| `APPLE_ID` | Apple ID authorized for the developer team |
+| `TEAM_ID` | Developer team ID matching the signing certificate |
+| `NOTARY_PASSWORD` | App-specific password used by notarytool |
 
-3. Manually run **Draft release**, selecting the existing version tag. The job
+The workflow selects the Developer ID Application identity matching `TEAM_ID`
+from its temporary keychain. It creates a short-lived notarytool profile using
+these secrets. No provisioning profile is needed for the command-line binary.
+
+3. Manually run **Draft release** from `main`, selecting the existing version tag. The job
    tests the tag, signs and notarizes macOS builds, creates all archives and
    checksums, and uploads them to a **draft** GitHub Release. It does not publish
    that draft. Failed notarization stops the job. Temporary signing material is

@@ -37,28 +37,40 @@ jobs:
         run: |
           make test vet audit
           node --check internal/server/web/app.js
-      - name: Prepare signing keychain
+      - name: Prepare signing and notarization
         env:
-          SIGN_CERTIFICATE_BASE64: ${{ secrets.SIGN_CERTIFICATE_BASE64 }}
-          SIGN_CERTIFICATE_PASSWORD: ${{ secrets.SIGN_CERTIFICATE_PASSWORD }}
+          DEV_ID_APP_CERTIFICATE_BASE64: ${{ secrets.DEV_ID_APP_CERTIFICATE_BASE64 }}
+          DEV_ID_APP_CERTIFICATE_PASSWORD: ${{ secrets.DEV_ID_APP_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          NOTARY_KEY_BASE64: ${{ secrets.NOTARY_KEY_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
         run: |
           set -euo pipefail
           umask 077
+          for variable in DEV_ID_APP_CERTIFICATE_BASE64 DEV_ID_APP_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID TEAM_ID NOTARY_PASSWORD; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::$variable repository secret is not configured."
+              exit 1
+            fi
+          done
           signing_keychain="$RUNNER_TEMP/hako-signing.keychain-db"
-          printf '%s' "$SIGN_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/hako-signing.p12"
-          printf '%s' "$NOTARY_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/hako-notary.p8"
+          printf '%s' "$DEV_ID_APP_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/hako-signing.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$signing_keychain"
           security set-keychain-settings -lut 21600 "$signing_keychain"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$signing_keychain"
-          security import "$RUNNER_TEMP/hako-signing.p12" -P "$SIGN_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$signing_keychain"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$signing_keychain"
+          security import "$RUNNER_TEMP/hako-signing.p12" -P "$DEV_ID_APP_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$signing_keychain" > /dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$signing_keychain" > /dev/null
           security list-keychains -d user -s "$signing_keychain" login.keychain-db
-          xcrun notarytool store-credentials hako-release --key "$RUNNER_TEMP/hako-notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$signing_keychain"
-          rm "$RUNNER_TEMP/hako-signing.p12" "$RUNNER_TEMP/hako-notary.p8"
+          signing_identity="$(security find-identity -v -p codesigning "$signing_keychain" | awk -v team_id="$TEAM_ID" '/Developer ID Application:/ && index($0, "(" team_id ")") { print $2; exit }')"
+          if [[ -z "$signing_identity" ]]; then
+            echo "::error::No Developer ID Application identity matches TEAM_ID."
+            exit 1
+          fi
+          echo "::add-mask::$signing_identity"
+          echo "SIGN_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+          xcrun notarytool store-credentials hako-release --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$signing_keychain"
+          rm "$RUNNER_TEMP/hako-signing.p12"
       - uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           version: v2.20.0
@@ -66,11 +78,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ inputs.tag }}
-          SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
           NOTARY_PROFILE: hako-release
           NOTARY_KEYCHAIN: ${{ runner.temp }}/hako-signing.keychain-db
       - name: Remove signing material
         if: always()
         run: |
           security delete-keychain "$RUNNER_TEMP/hako-signing.keychain-db" || true
-          rm -f "$RUNNER_TEMP/hako-signing.p12" "$RUNNER_TEMP/hako-notary.p8"
+          rm -f "$RUNNER_TEMP/hako-signing.p12"
