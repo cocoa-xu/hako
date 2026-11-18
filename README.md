@@ -4,6 +4,9 @@ Hako (箱, "box") is a small, self-hosted dashboard for a personal Mac fleet.
 One Go binary provides the macOS worker, server, and embedded web interface.
 CPU, memory, storage, and network observations update every two seconds without
 refreshing the page. Selecting a machine opens a compact detail drawer.
+Workers reuse an authenticated WebSocket for reports; sampling does not create
+a new HTTP request every two seconds. See the [upgrade order](docs/deployment.md#upgrade-and-roll-back)
+when moving from v0.2.1 or earlier.
 
 The server requires PostgreSQL 18 and runs on macOS or Linux. Workers run on macOS.
 Each device has a stable UUID and a separately editable display name. Joining

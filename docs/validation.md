@@ -3,6 +3,30 @@
 Validation recorded on 2026-11-11. Completed artifact checks below cover v0.1.0;
 Access and external authentication checks cover the v0.2.1 source.
 
+## Streaming follow-up: 2026-11-18
+
+- Full race tests against disposable PostgreSQL, `go vet ./...`, and the source
+  privacy audit passed with the WebSocket transport.
+- 1,000 acknowledged reports used one authenticated HTTP upgrade. The handshake
+  retained both Hako and Access credentials without putting tokens in URLs.
+- Five-minute simulated outages and repeatedly failing connections kept sampling
+  while backing off. Retry-After and prompt cancellation passed. Lost
+  acknowledgements, missing inventory, and reconnects preserved the cached
+  hardware observation without rescanning it.
+- Real WebSocket tests covered idle heartbeat replies, revoked devices,
+  identity binding, cross-origin rejection, invalid and oversized frames,
+  clearing HTTP deadlines, PostgreSQL persistence after restart, and explicit
+  shutdown of upgraded connections.
+- The nginx deployment example passed syntax validation and real proxied
+  WebSocket and legacy POST reports. Original Host and Access credentials were
+  preserved. Run this optional local check with
+  `HAKO_TEST_NGINX="$(command -v nginx)" make test`; the Linux CI configuration
+  enables it as well.
+- Existing production services and Cloudflare policies were not modified.
+  Local tests do not establish that a deployed Access application permits
+  WebSockets; follow the [staging checks](cloudflare.md#deployment-check),
+  including renewal after five minutes and Access token revocation.
+
 ## Passed
 
 - `go test -race ./...` and `go vet ./...`, including enrollment expiry, concurrent

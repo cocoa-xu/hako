@@ -33,6 +33,12 @@ jobs:
       - name: Install PostgreSQL for macOS tests
         if: runner.os == 'macOS'
         run: brew install postgresql@18
+      - name: Install nginx for Linux proxy tests
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nginx
+          echo "HAKO_TEST_NGINX=$(command -v nginx)" >> "$GITHUB_ENV"
       - run: make test vet audit
       - run: node --check internal/server/web/app.js
       - run: make build

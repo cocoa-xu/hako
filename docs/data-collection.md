@@ -16,7 +16,8 @@
 
 Hardware is collected on agent startup and sent with the first successful
 report. Failed deliveries reuse the same observation. Subsequent reports contain
-dynamic state only. If the receiver loses its saved inventory, it requests the
+dynamic state only. After reconnecting, the worker resends its cached inventory
+without rescanning hardware. If the receiver loses its saved inventory, it requests the
 cached copy instead of triggering another hardware scan. An unsuccessful
 hardware collection is retried. Restart the agent to refresh hardware manually.
 
@@ -24,6 +25,12 @@ Dynamic collection runs on a fixed two-second cadence by default. Collection
 and delivery are independent: a slow receiver keeps only the newest pending
 sample. Security settings are checked every 30 seconds; hardware is still
 collected at startup. Individual commands have timeouts.
+
+Continuous workers send samples over an authenticated WebSocket. The receiver
+acknowledges each persisted report. Failed connections use exponential backoff
+while collection continues; superseded samples are discarded, not replayed.
+Streams renew every five minutes to recheck proxy authentication. `agent --once`
+sends a single HTTP report. See [Cloudflare request volume](cloudflare.md#request-volume-and-reconnects).
 
 The dashboard receives reports through a server-sent event stream and reconnects
 automatically. It shows no current network speed after ten seconds without a

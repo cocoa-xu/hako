@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Reuse an authenticated WebSocket for worker reports while retaining two-second sampling.
+- Acknowledge persisted reports, resend cached inventory after reconnecting, and keep only the latest pending sample.
+- Back off failed connections with jitter, honor Retry-After, and stop on rejected credentials or unsupported streaming.
+- Close revoked workers' connections and renew streams every five minutes for Access authentication.
+- Add nginx WebSocket forwarding and document server-first upgrades. Legacy HTTP reporting remains available for older workers and one-shot reports.
+
 ## 0.2.1 - 2026-11-11
 
 - Support per-worker Cloudflare Access Service Tokens for enrollment and reports.

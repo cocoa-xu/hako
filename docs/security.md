@@ -39,8 +39,8 @@ the database. Protect every route and direct listener with the intended access
 policy; limit worker Service Tokens to `/api/enroll` and `/api/reports`.
 
 Optional Cloudflare Access Service Tokens are stored in each private worker
-configuration and sent on registration and every report, alongside the Hako
-Bearer credential. They are not sent to redirect destinations. Configure or
+configuration and sent on registration, WebSocket handshakes, and one-shot HTTP
+reports, alongside the Hako Bearer credential. They are not sent to redirect destinations. Configure or
 rotate them with `configure-access` without changing the Hako identity. They
 are not included in inventory or report payloads.
 
@@ -99,7 +99,8 @@ its 204 response and reports the mode in `X-Hako-Admin-Auth`.
 | GET | `/api/enrollments` | Admin | Key metadata, never raw keys |
 | DELETE | `/api/enrollments/{id}` | Admin | Revoke an enrollment key |
 | POST | `/api/enroll` | Enrollment key | Claim `device_id`, `token_hash` |
-| POST | `/api/reports` | Worker token | Submit that worker's observation |
+| GET | `/api/reports` | Worker token | Upgrade to an authenticated report WebSocket |
+| POST | `/api/reports` | Worker token | Submit a one-shot or legacy observation |
 | PATCH | `/api/machines/{uuid}` | Admin | Set `display_name` |
 | DELETE | `/api/machines/{uuid}` | Admin | Revoke device and delete snapshot |
 
@@ -109,3 +110,31 @@ already claimed by another identity, and 410 for an expired unused key. Device
 names allow up to 80 Unicode characters without control characters. An empty
 name uses the reported hostname. Worker reports rejected with 401 or 403 stop
 the worker rather than retrying indefinitely.
+
+## Report streams
+
+The handshake requires `Authorization: Bearer TOKEN`, `X-Hako-Device-ID`, and
+WebSocket subprotocol `hako.reports.v1`. Tokens are never put in URLs. The
+receiver checks the worker identity before upgrading, binds the connection to
+that UUID, and rechecks the credential on each message. Cross-origin browser
+upgrades are rejected.
+
+Reports are JSON text frames containing `sequence` (a strictly increasing positive
+integer within the connection) and `snapshot` (the same object accepted by HTTP).
+The receiver returns `sequence` and `status` after processing. Status 204 confirms
+PostgreSQL persistence; 409 requests cached hardware inventory with the next
+sample. A failed acknowledgement does not mark inventory as delivered. Only
+one report is in flight, with a 20-second worker timeout. The receiver limits
+frames to 1 MiB and the worker limits acknowledgements to 1 KiB.
+
+The receiver pings every 20 seconds, allows ten seconds for a reply, and closes
+connections after five minutes to force a fresh handshake through Access.
+Device removal closes its streams and prevents further writes. Server shutdown
+also closes upgraded connections explicitly. Access policy checks occur at the
+handshake; changing a policy need not terminate an existing connection before
+renewal. Hako still enforces its own revocations on every report.
+
+Reconnects use jittered exponential backoff, capped at one minute, and honor
+Retry-After up to one hour. Authentication failures and unsupported streaming
+stop the worker. No continuous HTTP fallback is enabled. The worker buffers only
+the latest pending sample and resends cached hardware after reconnecting.

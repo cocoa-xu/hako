@@ -10,9 +10,13 @@ The server installer configures Hako, not the PostgreSQL service.
 
 For remote workers, put an HTTPS reverse proxy in front of the loopback listener.
 Set `--public-url` to the exact browser-facing HTTPS origin. Preserve the Host
-header and disable response buffering for `/api/events`. Hako does not trust
-forwarded headers. The included `deploy/Caddyfile` is a minimal Caddy example;
+header, allow WebSocket upgrades on `/api/reports`, and disable response buffering
+for `/api/events`. Hako does not trust forwarded headers. The included
+`deploy/nginx.conf` forwards WebSocket Upgrade and Connection headers explicitly,
+as required by [nginx](https://nginx.org/en/docs/http/websocket.html).
+The included `deploy/Caddyfile` is a minimal Caddy example;
 replace `hako.example.com` with your hostname and configure DNS before use.
+[Caddy handles WebSocket upgrades automatically](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming).
 
 For Cloudflare Access, follow the [Access deployment guide](cloudflare.md) before
 enabling interactive login: workers need their own Service Token configuration.
@@ -188,7 +192,8 @@ Open a machine's **Device** tab to edit its display name. An empty name restores
 the hostname. Neither operation changes the UUID, worker token, or Mac hostname.
 
 **Remove machine** immediately revokes its token and removes its latest report.
-The worker stops after the next rejected report. A revoked identity cannot be
+Active report streams are closed. The worker stops when it receives the rejection;
+older HTTP workers stop after the next rejected report. A revoked identity cannot be
 restored by replaying its old enrollment key. To join again, stop the worker,
 remove or archive its private configuration, issue a new key, and enroll a new
 UUID. Revoking a pending enrollment key does not revoke an already joined Mac.
@@ -199,6 +204,17 @@ CLI removal uses `hako revoke --id DEVICE_UUID --admin-key-file ...`; add
 ## Upgrade and roll back
 
 Back up the server before an upgrade. Verify and extract the new release.
+When upgrading from v0.2.1 or earlier, update the server and reverse proxy first,
+then the workers. The new server still accepts old workers' HTTP reports. Add
+the WebSocket configuration from `deploy/nginx.conf` in nginx's `http` context,
+validate with `nginx -t`, and reload it before upgrading workers. Cloudflare
+deployments also need the [streaming configuration](cloudflare.md).
+
+New workers require streaming and stop with a clear error if an older server or
+proxy rejects the upgrade. They never silently resume two-second HTTP requests.
+For a rollback to v0.2.1, roll workers back too. Enrollment credentials, device
+UUIDs, and the database schema do not change for this transport upgrade.
+
 On Linux, rerun `sudo ./scripts/install-server.sh` without arguments. It preserves
 `server.env`, `database.url`, and PostgreSQL data. On each Mac worker, rerun
 `sudo ./scripts/install-worker.sh` without enrollment arguments. It preserves
