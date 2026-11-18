@@ -87,6 +87,7 @@ func (s *Server) openDatabase(databaseURL string) error {
 
 // Close releases the database connection and its exclusive receiver lock.
 func (s *Server) Close() error {
+	s.closeReportStreams()
 	if s.db != nil {
 		_ = s.db.Close()
 	}

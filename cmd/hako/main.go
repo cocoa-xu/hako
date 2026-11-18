@@ -138,6 +138,10 @@ func run(ctx context.Context, args []string) error {
 			slog.Error("Worker stopped: authentication rejected. Check Hako enrollment and Cloudflare Access credentials before restarting.")
 			return nil
 		}
+		if errors.Is(err, agent.ErrStreamingUnsupported) {
+			slog.Error("Worker stopped: report streaming is unavailable. Upgrade the server and proxy before restarting.")
+			return nil
+		}
 		return err
 	case "serve":
 		flags := flag.NewFlagSet("serve", flag.ContinueOnError)

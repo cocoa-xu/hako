@@ -123,6 +123,10 @@ func (a *Agent) send(ctx context.Context, snapshot report.Snapshot) error {
 }
 
 func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
+	return a.run(ctx, interval, a.connect)
+}
+
+func (a *Agent) run(ctx context.Context, interval time.Duration, connect func(context.Context) (reportSender, error)) error {
 	if interval < time.Second {
 		return fmt.Errorf("report interval must be at least one second")
 	}
@@ -157,16 +161,73 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 		}
 	}()
 	defer func() { cancel(); <-done }()
+	var stream reportSender
+	defer func() {
+		if stream != nil {
+			stream.close()
+		}
+	}()
+	failures := 0
+	var connectedAt time.Time
+	reconnect := func(err error) {
+		delay := retryDelay(failures)
+		var upstream *retryAfterError
+		if errors.As(err, &upstream) {
+			delay = max(delay, upstream.delay)
+		}
+		failures = min(failures+1, 5)
+		if ctx.Err() == nil {
+			if errors.Is(err, errStreamRenewal) {
+				slog.Debug("renewing report stream", "delay", delay)
+			} else {
+				slog.Warn("report stream disconnected; reconnecting", "delay", delay, "error", err)
+			}
+			waitToReconnect(ctx, delay)
+		}
+	}
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if stream == nil {
+			var err error
+			stream, err = connect(ctx)
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrStreamingUnsupported) {
+				return err
+			}
+			if err != nil {
+				reconnect(err)
+				continue
+			}
+			connectedAt = time.Now()
+			a.deliveredInventory = nil
+		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case snapshot := <-samples:
-			if err := a.send(ctx, snapshot); errors.Is(err, ErrUnauthorized) {
-				return err
-			} else if err != nil && ctx.Err() == nil {
-				slog.Warn("report failed; retrying with the latest sample", "error", err)
+			inventory := snapshot.Hardware
+			if inventory == a.deliveredInventory {
+				snapshot.Hardware = nil
 			}
+			err := stream.send(ctx, snapshot)
+			if errors.Is(err, ErrUnauthorized) {
+				return err
+			}
+			if errors.Is(err, errInventoryRequired) {
+				a.deliveredInventory = nil
+				continue
+			}
+			if err != nil {
+				stream.close()
+				stream = nil
+				if time.Since(connectedAt) >= time.Minute {
+					failures = 0
+				}
+				reconnect(err)
+				continue
+			}
+			a.deliveredInventory = inventory
 		}
 	}
 }

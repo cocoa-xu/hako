@@ -13,11 +13,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/cocoa-xu/hako/internal/agent"
 	"github.com/cocoa-xu/hako/internal/identity"
-	"unicode"
-	"unicode/utf8"
+	"github.com/coder/websocket"
 )
 
 const maxEnrollmentTTL = 24 * time.Hour
@@ -267,6 +268,11 @@ func (s *Server) revokeMachine(w http.ResponseWriter, r *http.Request) {
 	}
 	s.registry = next
 	delete(s.machines, id)
+	for connection, deviceID := range s.streams {
+		if deviceID == id {
+			go connection.Close(websocket.StatusPolicyViolation, "Worker revoked")
+		}
+	}
 	// The tombstone also prevents loading an old snapshot after a crash.
 	s.notifyLocked()
 	w.WriteHeader(http.StatusNoContent)

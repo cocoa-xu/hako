@@ -57,6 +57,7 @@ func (s *Server) ListenAndServe(ctx context.Context, addresses []string) error {
 }
 
 func (s *Server) serve(ctx context.Context, listeners []net.Listener, hosts []string) error {
+	defer s.closeReportStreams()
 	defer func() {
 		for _, listener := range listeners {
 			_ = listener.Close()

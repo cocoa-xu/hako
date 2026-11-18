@@ -23,6 +23,7 @@ import (
 	"github.com/cocoa-xu/hako/internal/agent"
 	"github.com/cocoa-xu/hako/internal/identity"
 	"github.com/cocoa-xu/hako/internal/report"
+	"github.com/coder/websocket"
 )
 
 //go:embed web/*
@@ -46,6 +47,8 @@ type Server struct {
 	adminKey    string
 	publicURL   *url.URL
 	adminAuth   string
+	streams     map[*websocket.Conn]string
+	closing     bool
 }
 
 // Config controls proxy-facing origin and administrator authentication.
@@ -85,7 +88,7 @@ func NewWithConfig(directory, databaseURL string, config Config) (*Server, error
 	if err := Prepare(directory); err != nil {
 		return nil, err
 	}
-	s := &Server{directory: directory, databaseURL: databaseURL, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{})}
+	s := &Server{directory: directory, databaseURL: databaseURL, machines: make(map[string]Machine), subscribers: make(map[chan struct{}]struct{}), streams: make(map[*websocket.Conn]string)}
 	s.adminAuth = config.AdminAuth
 	origin := config.PublicURL
 	if origin != "" {
@@ -151,6 +154,7 @@ func (s *Server) Handler(additionalHosts ...string) http.Handler {
 	mux.HandleFunc("DELETE /api/machines/{id}", s.requireAdmin(s.revokeMachine))
 	mux.HandleFunc("PATCH /api/machines/{id}", s.requireAdmin(s.renameMachine))
 	mux.HandleFunc("POST /api/reports", s.receive)
+	mux.HandleFunc("GET /api/reports", s.receiveStream)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
@@ -228,35 +232,50 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Expected one report.", http.StatusBadRequest)
 		return
 	}
+	token, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !bearer {
+		token = ""
+	}
+	status, message := s.storeReport(snapshot, token)
+	if status != http.StatusNoContent {
+		http.Error(w, message, status)
+		return
+	}
+	w.WriteHeader(status)
+}
+
+func (s *Server) workerAuthorizedLocked(id, token string) bool {
+	credential, exists := s.registry.Devices[id]
+	return token != "" && exists && credential.RevokedAt == nil && subtle.ConstantTimeCompare([]byte(hashSecret(token)), []byte(credential.TokenHash)) == 1
+}
+
+func (s *Server) storeReport(snapshot report.Snapshot, token string) (int, string) {
 	snapshot.DeviceID = identity.Normalize(snapshot.DeviceID)
 	if !validID(snapshot.DeviceID) || snapshot.SchemaVersion != report.SchemaVersion || snapshot.ReportedAt.IsZero() {
-		http.Error(w, "Invalid report identity or version.", http.StatusBadRequest)
-		return
+		return http.StatusBadRequest, "Invalid report identity or version."
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	credential, exists := s.registry.Devices[snapshot.DeviceID]
-	token, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !exists || credential.RevokedAt != nil || !bearer || subtle.ConstantTimeCompare([]byte(hashSecret(token)), []byte(credential.TokenHash)) != 1 {
-		http.Error(w, "Invalid agent credential.", http.StatusUnauthorized)
-		return
+	if s.closing {
+		return http.StatusServiceUnavailable, "Receiver is shutting down."
+	}
+	if !s.workerAuthorizedLocked(snapshot.DeviceID, token) {
+		return http.StatusUnauthorized, "Invalid agent credential."
 	}
 	previous, exists := s.machines[snapshot.DeviceID]
 	if snapshot.Hardware == nil {
 		if !exists {
-			http.Error(w, "Startup inventory required.", http.StatusConflict)
-			return
+			return http.StatusConflict, "Startup inventory required."
 		}
 		snapshot.Hardware = previous.Snapshot.Hardware
 	}
 	machine := Machine{Snapshot: snapshot, ReceivedAt: time.Now().UTC()}
 	if err := s.saveMachine(machine); err != nil {
-		http.Error(w, "Could not save report.", http.StatusInternalServerError)
-		return
+		return http.StatusInternalServerError, "Could not save report."
 	}
 	s.machines[snapshot.DeviceID] = machine
 	s.notifyLocked()
-	w.WriteHeader(http.StatusNoContent)
+	return http.StatusNoContent, ""
 }
 
 func (s *Server) loadLegacyMachines(directory string) error {
