@@ -47,15 +47,29 @@ func TestNginxProxyStreamsAndLegacyReports(t *testing.T) {
 	}
 	proxy := strings.ReplaceAll(string(example), "127.0.0.1:8787", receiver.Listener.Addr().String())
 	proxy = strings.ReplaceAll(proxy, "listen 127.0.0.1:8080;", "listen unix:"+socket+";")
-	configuration := fmt.Sprintf("daemon off;\nmaster_process off;\npid %s/nginx.pid;\nerror_log stderr;\nevents {}\nhttp { access_log off; %s }\n", directory, proxy)
+	configuration := fmt.Sprintf(`daemon off;
+master_process off;
+pid %s/nginx.pid;
+error_log stderr;
+events {}
+http {
+    access_log off;
+    client_body_temp_path client_body_temp;
+    proxy_temp_path proxy_temp;
+    fastcgi_temp_path fastcgi_temp;
+    uwsgi_temp_path uwsgi_temp;
+    scgi_temp_path scgi_temp;
+    %s
+}
+`, directory, proxy)
 	path := filepath.Join(directory, "nginx.conf")
 	if err := os.WriteFile(path, []byte(configuration), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(nginx, "-p", directory, "-c", path, "-t").CombinedOutput(); err != nil {
+	if output, err := exec.Command(nginx, "-e", "stderr", "-p", directory, "-c", path, "-t").CombinedOutput(); err != nil {
 		t.Fatalf("nginx configuration rejected: %v\n%s", err, output)
 	}
-	process := exec.Command(nginx, "-p", directory, "-c", path)
+	process := exec.Command(nginx, "-e", "stderr", "-p", directory, "-c", path)
 	if err := process.Start(); err != nil {
 		t.Fatal(err)
 	}
