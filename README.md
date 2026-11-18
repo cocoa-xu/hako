@@ -70,7 +70,8 @@ make build
 ```
 
 The frontend uses browser-native JavaScript and CSS without a package manager.
-PostgreSQL uses the `pgx` driver. `make test` starts and removes a disposable
+Frontend tests use Node.js 24's built-in test runner; no packages need installing.
+PostgreSQL uses the `pgx` driver. `make test` runs the frontend tests, then starts and removes a disposable
 PostgreSQL cluster, or uses `HAKO_TEST_DATABASE_URL` with a role allowed to create
 and drop isolated test databases. macOS CPU sampling uses cgo
 and Apple's SDK; builds without cgo retain a command-based fallback. Release

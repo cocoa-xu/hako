@@ -1,13 +1,17 @@
 GO ?= go
+NODE ?= node
 GORELEASER ?= goreleaser
 
-.PHONY: build test vet audit sign release-check snapshot
+.PHONY: build test test-web vet audit sign release-check snapshot
 
 build:
 	$(GO) build -trimpath -buildvcs=false -o bin/hako ./cmd/hako
 
-test:
+test: test-web
 	GO="$(GO)" ./scripts/test.sh
+
+test-web:
+	$(NODE) --test internal/server/webtest/*.test.mjs
 
 vet:
 	$(GO) vet ./...

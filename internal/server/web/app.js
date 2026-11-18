@@ -1,5 +1,7 @@
 'use strict';
 
+import {createEventStream} from './events.mjs';
+
 const $ = id => document.getElementById(id);
 let machines = [];
 let selectedID = null;
@@ -420,11 +422,16 @@ detailTabs.forEach((button, index) => {
     next.focus();
   });
 });
-let events = null;
-let checkingSession = false;
 let adminAuth = 'builtin';
+let initialSessionCheck = null;
+const events = createEventStream({onFleet: receiveFleet, onDisconnect: disconnected, onUnauthorized: showSignIn});
+function cancelInitialSessionCheck() {
+  initialSessionCheck?.abort();
+  initialSessionCheck = null;
+}
 function showSignIn() {
-  events?.close(); events = null;
+  cancelInitialSessionCheck();
+  events.stop();
   if ($('detail').open) $('detail').close();
   if ($('enrollment').open) $('enrollment').close();
   machines = []; selectedID = null; connected = false;
@@ -439,20 +446,9 @@ function showSignIn() {
   $('workspace').hidden = true; $('sign-out').hidden = true; $('sign-in').hidden = false;
 }
 function startEvents() {
+  cancelInitialSessionCheck();
   $('sign-in').hidden = true; $('workspace').hidden = false; $('sign-out').hidden = adminAuth === 'external';
-  events?.close();
-  events = new EventSource('/api/events');
-  events.addEventListener('machines', event => {
-    try { receiveFleet(JSON.parse(event.data)); } catch { disconnected(); }
-  });
-  events.addEventListener('error', async () => {
-    disconnected();
-    if (checkingSession) return;
-    checkingSession = true;
-    try { if ((await fetch('/api/session')).status === 401) showSignIn(); }
-    catch { /* The stream reconnects when the receiver returns. */ }
-    finally { checkingSession = false; }
-  });
+  events.start();
 }
 async function api(path, method = 'GET', body) {
   const response = await fetch(path, {method, headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
@@ -530,12 +526,23 @@ $('remove-machine').addEventListener('click', async () => {
   finally { $('remove-machine').disabled = false; }
 });
 async function initialize() {
+  const check = new AbortController();
+  initialSessionCheck = check;
+  const timeout = setTimeout(() => check.abort(), 10000);
   try {
-    const response = await fetch('/api/session');
+    const response = await fetch('/api/session', {signal: check.signal, redirect: 'manual', cache: 'no-store'});
+    if (initialSessionCheck !== check) return;
     adminAuth = response.headers.get('X-Hako-Admin-Auth') || 'builtin';
-    if (response.ok) startEvents(); else showSignIn();
+    if (response.status === 204) startEvents(); else showSignIn();
   }
-  catch { showSignIn(); showFormError('sign-in-error', new Error('The server is unavailable. Try signing in when it returns.')); }
+  catch {
+    if (initialSessionCheck !== check) return;
+    showSignIn(); showFormError('sign-in-error', new Error('The server is unavailable. Try signing in when it returns.'));
+  }
+  finally {
+    clearTimeout(timeout);
+    if (initialSessionCheck === check) initialSessionCheck = null;
+  }
 }
 window.setInterval(() => { if (machines.length) render(); }, 2000);
 initialize();
