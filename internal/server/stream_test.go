@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -176,5 +177,102 @@ func TestServerCloseTerminatesHijackedConnections(t *testing.T) {
 	defer cancel()
 	if _, _, err := connection.Read(ctx); err == nil || ctx.Err() != nil {
 		t.Fatal("shutdown left WebSocket open", err)
+	}
+}
+
+func TestReportPersistenceDoesNotBlockHeartbeat(t *testing.T) {
+	s, config := setup(t)
+	timing := streamTiming{lease: time.Minute, heartbeatInterval: 25 * time.Millisecond, heartbeatTimeout: 250 * time.Millisecond}
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.receiveStreamWithTiming(w, r, timing)
+	}))
+	defer receiver.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer "+config.Token)
+	headers.Set("X-Hako-Device-ID", config.DeviceID)
+	var pinged atomic.Int64
+	connection, _, err := websocket.Dial(ctx, receiver.URL+"/api/reports", &websocket.DialOptions{
+		HTTPHeader: headers, Subprotocols: []string{report.StreamProtocol},
+		OnPingReceived: func(context.Context, []byte) bool { pinged.Add(1); return true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	var ack report.StreamAck
+	result := make(chan error, 1)
+	go func() { result <- wsjson.Read(ctx, connection, &ack) }()
+	s.mu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			s.mu.Unlock()
+		}
+	}()
+	hardware := report.OK(report.Hardware{ModelName: "Test Mac"})
+	snapshot := report.Snapshot{SchemaVersion: report.SchemaVersion, DeviceID: config.DeviceID, ReportedAt: time.Now(), Hardware: &hardware}
+	if err := wsjson.Write(ctx, connection, report.StreamReport{Sequence: 1, Snapshot: snapshot}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		t.Fatal("server closed a responsive worker while persistence was blocked", err)
+	case <-time.After(3 * timing.heartbeatTimeout):
+	}
+	if pinged.Load() < 2 {
+		t.Fatal("test did not exercise repeated heartbeats")
+	}
+	s.mu.Unlock()
+	locked = false
+	select {
+	case err := <-result:
+		if err != nil || ack.Sequence != 1 || ack.Status != http.StatusNoContent {
+			t.Fatal("report was not acknowledged after persistence resumed", ack, err)
+		}
+	case <-ctx.Done():
+		t.Fatal("report did not resume", ctx.Err())
+	}
+}
+
+func TestStreamReaderCancellationStopsHandler(t *testing.T) {
+	finished := make(chan struct{})
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer connection.CloseNow()
+		defer close(finished)
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		messages, done := readStreamMessages(ctx, connection)
+		message := <-messages
+		if message.err != nil {
+			t.Error(message.err)
+		}
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("reader did not stop after cancellation")
+		}
+	}))
+	defer receiver.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	connection, _, err := websocket.Dial(ctx, receiver.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	for i := 0; i < 3; i++ {
+		_ = connection.Write(ctx, websocket.MessageText, []byte("queued"))
+	}
+	select {
+	case <-finished:
+	case <-ctx.Done():
+		t.Fatal("stream handler leaked after cancellation")
 	}
 }

@@ -16,7 +16,25 @@ import (
 
 const streamLease = 5 * time.Minute
 
+type streamTiming struct {
+	lease             time.Duration
+	heartbeatInterval time.Duration
+	heartbeatTimeout  time.Duration
+}
+
+type streamMessage struct {
+	kind websocket.MessageType
+	data []byte
+	err  error
+}
+
 func (s *Server) receiveStream(w http.ResponseWriter, r *http.Request) {
+	s.receiveStreamWithTiming(w, r, streamTiming{
+		lease: streamLease, heartbeatInterval: 20 * time.Second, heartbeatTimeout: 10 * time.Second,
+	})
+}
+
+func (s *Server) receiveStreamWithTiming(w http.ResponseWriter, r *http.Request, timing streamTiming) {
 	id := identity.Normalize(r.Header.Get("X-Hako-Device-ID"))
 	token, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	s.mu.Lock()
@@ -69,19 +87,34 @@ func (s *Server) receiveStream(w http.ResponseWriter, r *http.Request) {
 		delete(s.streams, connection)
 		s.mu.Unlock()
 	}()
-	lease := time.AfterFunc(streamLease, func() { _ = connection.Close(websocket.StatusGoingAway, "Renew Access authentication") })
+	lease := time.AfterFunc(timing.lease, func() { _ = connection.Close(websocket.StatusGoingAway, "Renew Access authentication") })
 	defer lease.Stop()
 	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	go keepStreamAlive(ctx, connection)
+	messages, readDone := readStreamMessages(ctx, connection)
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		keepStreamAlive(ctx, connection, timing.heartbeatInterval, timing.heartbeatTimeout)
+	}()
+	defer func() {
+		cancel()
+		_ = connection.CloseNow()
+		<-readDone
+		<-heartbeatDone
+	}()
 	var lastSequence uint64
 	for {
-		kind, data, err := connection.Read(ctx)
-		if err != nil {
+		var frame streamMessage
+		select {
+		case <-ctx.Done():
+			return
+		case frame = <-messages:
+		}
+		if frame.err != nil {
 			return
 		}
 		var message report.StreamReport
-		if kind != websocket.MessageText || json.Unmarshal(data, &message) != nil || message.Sequence == 0 || message.Sequence <= lastSequence {
+		if frame.kind != websocket.MessageText || json.Unmarshal(frame.data, &message) != nil || message.Sequence == 0 || message.Sequence <= lastSequence {
 			_ = connection.Close(websocket.StatusUnsupportedData, "Invalid report frame")
 			return
 		}
@@ -108,15 +141,36 @@ func (s *Server) receiveStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func keepStreamAlive(ctx context.Context, connection *websocket.Conn) {
-	ticker := time.NewTicker(20 * time.Second)
+func readStreamMessages(ctx context.Context, connection *websocket.Conn) (<-chan streamMessage, <-chan struct{}) {
+	// An unbuffered handoff bounds queued data while the reader handles control frames.
+	messages := make(chan streamMessage)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			kind, data, err := connection.Read(ctx)
+			select {
+			case messages <- streamMessage{kind, data, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return messages, done
+}
+
+func keepStreamAlive(ctx context.Context, connection *websocket.Conn, interval, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ping, cancel := context.WithTimeout(ctx, 10*time.Second)
+			ping, cancel := context.WithTimeout(ctx, timeout)
 			err := connection.Ping(ping)
 			cancel()
 			if err != nil {
