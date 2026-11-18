@@ -178,3 +178,121 @@ func TestStreamInventoryRequiresAcknowledgementAndSurvivesReconnect(t *testing.T
 		}
 	})
 }
+
+func TestStreamRetainsSamplesWhenTheConnectionExpiresBetweenSamples(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		collector := &fakeCollector{}
+		a, _ := New(Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: strings.Repeat("a", 32), Server: "http://127.0.0.1"}, collector)
+		started := time.Now()
+		var delivered []report.Snapshot
+		done := make(chan error, 1)
+		go func() {
+			done <- a.run(ctx, 10*time.Minute, func(context.Context) (reportSender, error) {
+				connected := time.Now()
+				return &testSender{write: func(_ context.Context, snapshot report.Snapshot) error {
+					if time.Since(connected) >= 5*time.Minute {
+						return errStreamRenewal
+					}
+					delivered = append(delivered, snapshot)
+					return nil
+				}}, nil
+			})
+		}()
+		time.Sleep(21 * time.Minute)
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if len(delivered) != 3 || collector.inventories != 1 {
+			t.Fatalf("delivered=%d inventory scans=%d", len(delivered), collector.inventories)
+		}
+		for i, snapshot := range delivered {
+			if snapshot.ReportedAt.Sub(started) != time.Duration(i)*10*time.Minute || snapshot.Hardware == nil {
+				t.Fatalf("sample %d was lost or reconnected without inventory", i)
+			}
+		}
+	})
+}
+
+func TestReconnectPrefersTheLatestQueuedSample(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		a, _ := New(Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: strings.Repeat("a", 32), Server: "http://127.0.0.1"}, &fakeCollector{})
+		started := time.Now()
+		var sent []report.Snapshot
+		err := a.run(ctx, 2*time.Second, func(context.Context) (reportSender, error) {
+			return &testSender{write: func(_ context.Context, snapshot report.Snapshot) error {
+				sent = append(sent, snapshot)
+				if len(sent) == 1 {
+					time.Sleep(5 * time.Second)
+					return errors.New("acknowledgement lost")
+				}
+				cancel()
+				return nil
+			}}, nil
+		})
+		if err != nil || len(sent) != 2 {
+			t.Fatalf("sent=%d error=%v", len(sent), err)
+		}
+		if sent[1].ReportedAt.Sub(started) < 4*time.Second || sent[1].Hardware == nil {
+			t.Fatal("reconnect replayed an obsolete sample or omitted inventory")
+		}
+	})
+}
+
+func TestMissingInventoryIsResentWithoutWaitingForAnotherSample(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		a, _ := New(Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: strings.Repeat("a", 32), Server: "http://127.0.0.1"}, &fakeCollector{})
+		started := time.Now()
+		var sent []report.Snapshot
+		err := a.run(ctx, 10*time.Minute, func(context.Context) (reportSender, error) {
+			return &testSender{write: func(_ context.Context, snapshot report.Snapshot) error {
+				sent = append(sent, snapshot)
+				switch len(sent) {
+				case 2:
+					return errInventoryRequired
+				case 3:
+					cancel()
+				}
+				return nil
+			}}, nil
+		})
+		if err != nil || len(sent) != 3 || time.Since(started) != 10*time.Minute {
+			t.Fatalf("sent=%d elapsed=%v error=%v", len(sent), time.Since(started), err)
+		}
+		if sent[1].Hardware != nil || sent[2].Hardware == nil || !sent[1].ReportedAt.Equal(sent[2].ReportedAt) {
+			t.Fatal("inventory retry did not preserve the pending sample")
+		}
+	})
+}
+
+func TestFullInventoryRejectionBacksOff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		a, _ := New(Config{DeviceID: "0123456789abcdef0123456789abcdef", Token: strings.Repeat("a", 32), Server: "http://127.0.0.1"}, &fakeCollector{})
+		attempts := 0
+		done := make(chan error, 1)
+		go func() {
+			done <- a.run(ctx, 2*time.Second, func(context.Context) (reportSender, error) {
+				attempts++
+				return &testSender{write: func(context.Context, report.Snapshot) error { return errInventoryRequired }}, nil
+			})
+		}()
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if attempts < 5 || attempts > 7 {
+			t.Fatalf("full inventory rejection did not back off: %d attempts in one minute", attempts)
+		}
+	})
+}

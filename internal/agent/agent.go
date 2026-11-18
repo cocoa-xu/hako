@@ -169,6 +169,7 @@ func (a *Agent) run(ctx context.Context, interval time.Duration, connect func(co
 	}()
 	failures := 0
 	var connectedAt time.Time
+	var pending *report.Snapshot
 	reconnect := func(err error) {
 		delay := retryDelay(failures)
 		var upstream *retryAfterError
@@ -202,32 +203,46 @@ func (a *Agent) run(ctx context.Context, interval time.Duration, connect func(co
 			connectedAt = time.Now()
 			a.deliveredInventory = nil
 		}
-		select {
-		case <-ctx.Done():
-			return nil
-		case snapshot := <-samples:
-			inventory := snapshot.Hardware
-			if inventory == a.deliveredInventory {
-				snapshot.Hardware = nil
+		if pending == nil {
+			select {
+			case <-ctx.Done():
+				return nil
+			case snapshot := <-samples:
+				pending = &snapshot
 			}
-			err := stream.send(ctx, snapshot)
-			if errors.Is(err, ErrUnauthorized) {
-				return err
+		} else {
+			select {
+			case snapshot := <-samples:
+				pending = &snapshot
+			default:
 			}
-			if errors.Is(err, errInventoryRequired) {
-				a.deliveredInventory = nil
-				continue
-			}
-			if err != nil {
-				stream.close()
-				stream = nil
-				if time.Since(connectedAt) >= time.Minute {
-					failures = 0
-				}
-				reconnect(err)
-				continue
-			}
-			a.deliveredInventory = inventory
 		}
+		snapshot := *pending
+		inventory := snapshot.Hardware
+		if inventory == a.deliveredInventory {
+			snapshot.Hardware = nil
+		}
+		err := stream.send(ctx, snapshot)
+		if errors.Is(err, ErrUnauthorized) {
+			return err
+		}
+		if errors.Is(err, errInventoryRequired) {
+			a.deliveredInventory = nil
+			if snapshot.Hardware == nil {
+				continue
+			}
+			err = fmt.Errorf("receiver rejected startup inventory")
+		}
+		if err != nil {
+			stream.close()
+			stream = nil
+			if time.Since(connectedAt) >= time.Minute {
+				failures = 0
+			}
+			reconnect(err)
+			continue
+		}
+		a.deliveredInventory = inventory
+		pending = nil
 	}
 }
