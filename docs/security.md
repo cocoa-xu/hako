@@ -122,10 +122,15 @@ upgrades are rejected.
 Reports are JSON text frames containing `sequence` (a strictly increasing positive
 integer within the connection) and `snapshot` (the same object accepted by HTTP).
 The receiver returns `sequence` and `status` after processing. Status 204 confirms
-PostgreSQL persistence; 409 requests cached hardware inventory with the next
+PostgreSQL persistence; 409 requests cached hardware inventory with the pending
 sample. A failed acknowledgement does not mark inventory as delivered. Only
 one report is in flight, with a 20-second worker timeout. The receiver limits
 frames to 1 MiB and the worker limits acknowledgements to 1 KiB.
+
+Socket reads continue while persistence is pending, so server-side database waits
+do not prevent heartbeat replies from being processed. An unbuffered handoff
+limits additional pending input to one frame. Closing the handler cancels and
+joins its reader and heartbeat goroutines.
 
 The receiver pings every 20 seconds, allows ten seconds for a reply, and closes
 connections after five minutes to force a fresh handshake through Access.

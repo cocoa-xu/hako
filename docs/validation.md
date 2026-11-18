@@ -5,8 +5,26 @@ Access and external authentication checks cover the v0.2.1 source.
 
 ## Streaming follow-up: 2026-11-18
 
+- Independent correctness and performance reviews found and fixed lost pending
+  reports after connection expiry, heartbeats blocked by persistence, and
+  dashboard retries without an application-controlled backoff.
+- A real worker/server regression now covers a connection lease shorter than
+  the sampling interval. A separate five-minute-ten-second run used exactly two
+  handshakes, scanned inventory once, and persisted fresh reports after renewal.
+  Run the longer check with `HAKO_TEST_STREAM_SOAK=1 make test`.
+- Blocking persistence for multiple heartbeat deadlines no longer disconnects a
+  responsive worker. Reader cancellation and long-interval report retention have
+  dedicated regression tests.
+- All 17 Node.js dashboard transport tests passed, covering outage request
+  counts, repeated brief connections, 502 recovery, session timeouts, Retry-After,
+  authentication failures, and cancellation of stale work. Native Node
+  EventSource against a local HTTP fixture also confirmed approximately one-,
+  two-, and four-second reconnect gaps despite receiving data before each EOF.
+  These are transport tests, not a browser UI validation.
 - Full race tests against disposable PostgreSQL, `go vet ./...`, and the source
   privacy audit passed with the WebSocket transport.
+- Native macOS and Linux amd64 builds passed after the review fixes. These are
+  local build checks, not signed release artifacts or Linux runtime validation.
 - 1,000 acknowledged reports used one authenticated HTTP upgrade. The handshake
   retained both Hako and Access credentials without putting tokens in URLs.
 - Five-minute simulated outages and repeatedly failing connections kept sampling
@@ -21,7 +39,8 @@ Access and external authentication checks cover the v0.2.1 source.
   WebSocket and legacy POST reports. Original Host and Access credentials were
   preserved. Run this optional local check with
   `HAKO_TEST_NGINX="$(command -v nginx)" make test`; the Linux CI configuration
-  enables it as well.
+  enables it as well. Proxy tests now keep logs and temporary paths inside their
+  disposable directory rather than relying on the nginx package's defaults.
 - Existing production services and Cloudflare policies were not modified.
   Local tests do not establish that a deployed Access application permits
   WebSockets; follow the [staging checks](cloudflare.md#deployment-check),

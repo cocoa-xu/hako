@@ -122,6 +122,12 @@ Retry-After response can delay retries for up to an hour. Workers continue
 sampling locally and retain only the latest pending observation. Repeated
 short-lived connections do not reset the backoff.
 
+Dashboard event connections also use exponential backoff with jitter. A failed
+stream is closed before retrying, and each retry makes one time-bounded session
+check. Authentication rejection or an Access login redirect stops retries;
+temporary proxy errors can recover automatically. Signing out cancels pending
+checks and reconnect timers. Healthy dashboards do not poll the session endpoint.
+
 A worker does not fall back to repeated HTTP reports if the server or proxy
 cannot upgrade the connection. It logs an upgrade/configuration error and
 stops; correct the configuration and restart it. `agent --once` deliberately

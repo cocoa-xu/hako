@@ -7,6 +7,9 @@
 - Back off failed connections with jitter, honor Retry-After, and stop on rejected credentials or unsupported streaming.
 - Close revoked workers' connections and renew streams every five minutes for Access authentication.
 - Add nginx WebSocket forwarding and document server-first upgrades. Legacy HTTP reporting remains available for older workers and one-shot reports.
+- Preserve pending observations across reconnects, including sampling intervals longer than the connection lease.
+- Keep heartbeats responsive while reports wait for database persistence.
+- Back off dashboard reconnections, recover from temporary proxy failures, and cancel retries when authentication expires or the user signs out.
 
 ## 0.2.1 - 2026-11-11
 

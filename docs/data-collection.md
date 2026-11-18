@@ -33,7 +33,9 @@ Streams renew every five minutes to recheck proxy authentication. `agent --once`
 sends a single HTTP report. See [Cloudflare request volume](cloudflare.md#request-volume-and-reconnects).
 
 The dashboard receives reports through a server-sent event stream and reconnects
-automatically. It shows no current network speed after ten seconds without a
+with jittered exponential backoff, capped at one minute. Failed session checks
+can request a longer delay with Retry-After. Authentication failures stop retries.
+It shows no current network speed after ten seconds without a
 new traffic observation. A machine has no recent report after 90 seconds without
 receipt. These indicate reporting freshness, not proof that the Mac is off.
 
