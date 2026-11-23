@@ -2,7 +2,8 @@
 
 ## Artifacts
 
-The pinned toolchain is Go 1.27.3 and GoReleaser v2.20.0. Build the complete matrix
+The pinned toolchain is Go 1.27.3 and GoReleaser v2.20.0; frontend tests use Node.js 24.
+Build the complete matrix
 on macOS with Xcode Command Line Tools and PostgreSQL 18 for integration tests. Install GoReleaser from its
 [official releases](https://github.com/goreleaser/goreleaser/releases/tag/v2.20.0)
 and verify the download against the checksums from that release.

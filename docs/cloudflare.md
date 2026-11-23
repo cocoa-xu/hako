@@ -1,7 +1,8 @@
 # Cloudflare Access
 
-These options require v0.2.1 or later. The v0.1.0 worker cannot send
-Access Service Token headers. Upgrade the worker before protecting its endpoint.
+Access Service Token configuration requires v0.2.1 or later. The v0.1.0 worker
+cannot send these headers. Streaming workers in v0.3.0 require a v0.3.0 server
+and WebSocket proxying; upgrade the server and proxy before the workers.
 
 ## Access policies and origin
 

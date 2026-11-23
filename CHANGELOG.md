@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-11-23
+
+Upgrade the server and reverse proxy before workers. Streaming workers require
+WebSocket support on `/api/reports`; existing device identities and credentials
+are preserved. Older HTTP workers remain compatible with the new server.
 
 - Reuse an authenticated WebSocket for worker reports while retaining two-second sampling.
 - Acknowledge persisted reports, resend cached inventory after reconnecting, and keep only the latest pending sample.
